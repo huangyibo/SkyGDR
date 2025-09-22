@@ -15,7 +15,7 @@ CXXFLAGS     := -O3 -std=$(CXXSTD) $(INCLUDES)
 CXXLDFLAGS   := $(LIBS)
 
 
-all: clean gpu_server cpu_client gpu_minimal_memhog gpu_memhog
+all: clean gpu_server cpu_client gpu_minimal_memhog gpu_memhog release
 
 gpu_server: gpu_server.cu
 	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
@@ -31,3 +31,7 @@ gpu_memhog: gpu_be_memhog_task.cu
 
 clean:
 	rm -f gpu_server cpu_client gpu_minimal_memhog gpu_memhog
+
+release:
+	mkdir bin
+	mv gpu_server cpu_client gpu_minimal_memhog gpu_memhog ./bin
