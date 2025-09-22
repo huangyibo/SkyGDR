@@ -33,5 +33,5 @@ clean:
 	rm -f gpu_server cpu_client gpu_minimal_memhog gpu_memhog
 
 release:
-	mkdir bin
+	mkdir -p bin
 	mv gpu_server cpu_client gpu_minimal_memhog gpu_memhog ./bin
