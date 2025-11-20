@@ -1,0 +1,261 @@
+timestamp,blocks,ops_per_s,throughput_gib_s,elapsed_s,client_retcode,notes,raw_output
+2025-11-20 13:03:30,0,75072.0,4.58,1.332,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.332 s  ops=75072 ops/s  throughput=4.58 GiB/s
+"
+2025-11-20 13:04:00,16,79660.0,4.86,1.255,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.255 s  ops=79660 ops/s  throughput=4.86 GiB/s
+"
+2025-11-20 13:04:30,32,79497.0,4.85,1.258,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.258 s  ops=79497 ops/s  throughput=4.85 GiB/s
+"
+2025-11-20 13:04:59,48,79443.0,4.85,1.259,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.259 s  ops=79443 ops/s  throughput=4.85 GiB/s
+"
+2025-11-20 13:05:29,64,79353.0,4.84,1.26,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.260 s  ops=79353 ops/s  throughput=4.84 GiB/s
+"
+2025-11-20 13:05:59,80,79197.0,4.83,1.263,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.263 s  ops=79197 ops/s  throughput=4.83 GiB/s
+"
+2025-11-20 13:06:28,96,79287.0,4.84,1.261,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.261 s  ops=79287 ops/s  throughput=4.84 GiB/s
+"
+2025-11-20 13:06:58,112,79114.0,4.83,1.264,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.264 s  ops=79114 ops/s  throughput=4.83 GiB/s
+"
+2025-11-20 13:07:29,128,79057.0,4.83,1.265,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.265 s  ops=79057 ops/s  throughput=4.83 GiB/s
+"
+2025-11-20 13:07:59,144,79062.0,4.83,1.265,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.265 s  ops=79062 ops/s  throughput=4.83 GiB/s
+"
+2025-11-20 13:08:29,160,78948.0,4.82,1.267,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.267 s  ops=78948 ops/s  throughput=4.82 GiB/s
+"
+2025-11-20 13:08:58,176,78984.0,4.82,1.266,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.266 s  ops=78984 ops/s  throughput=4.82 GiB/s
+"
+2025-11-20 13:09:28,192,78924.0,4.82,1.267,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.267 s  ops=78924 ops/s  throughput=4.82 GiB/s
+"
+2025-11-20 13:09:58,208,78950.0,4.82,1.267,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.267 s  ops=78950 ops/s  throughput=4.82 GiB/s
+"
+2025-11-20 13:10:28,224,78879.0,4.81,1.268,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.268 s  ops=78879 ops/s  throughput=4.81 GiB/s
+"
+2025-11-20 13:10:57,240,79081.0,4.83,1.265,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.265 s  ops=79081 ops/s  throughput=4.83 GiB/s
+"
+2025-11-20 13:11:27,256,79027.0,4.82,1.265,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.265 s  ops=79027 ops/s  throughput=4.82 GiB/s
+"
+2025-11-20 13:11:57,272,78846.0,4.81,1.268,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.268 s  ops=78846 ops/s  throughput=4.81 GiB/s
+"
+2025-11-20 13:12:27,288,78676.0,4.8,1.271,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.271 s  ops=78676 ops/s  throughput=4.80 GiB/s
+"
+2025-11-20 13:12:57,304,78678.0,4.8,1.271,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.271 s  ops=78678 ops/s  throughput=4.80 GiB/s
+"
+2025-11-20 13:13:27,320,78579.0,4.8,1.273,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.273 s  ops=78579 ops/s  throughput=4.80 GiB/s
+"
+2025-11-20 13:13:56,336,78458.0,4.79,1.275,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.275 s  ops=78458 ops/s  throughput=4.79 GiB/s
+"
+2025-11-20 13:14:26,352,78413.0,4.79,1.275,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.275 s  ops=78413 ops/s  throughput=4.79 GiB/s
+"
+2025-11-20 13:14:56,368,78280.0,4.78,1.277,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.277 s  ops=78280 ops/s  throughput=4.78 GiB/s
+"
+2025-11-20 13:15:26,384,78245.0,4.78,1.278,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.278 s  ops=78245 ops/s  throughput=4.78 GiB/s
+"
+2025-11-20 13:15:56,400,78136.0,4.77,1.28,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.280 s  ops=78136 ops/s  throughput=4.77 GiB/s
+"
+2025-11-20 13:16:25,416,78125.0,4.77,1.28,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.280 s  ops=78125 ops/s  throughput=4.77 GiB/s
+"
+2025-11-20 13:16:55,432,78237.0,4.78,1.278,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.278 s  ops=78237 ops/s  throughput=4.78 GiB/s
+"
+2025-11-20 13:17:25,448,78256.0,4.78,1.278,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.278 s  ops=78256 ops/s  throughput=4.78 GiB/s
+"
+2025-11-20 13:17:55,464,78125.0,4.77,1.28,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.280 s  ops=78125 ops/s  throughput=4.77 GiB/s
+"
+2025-11-20 13:18:24,480,78067.0,4.76,1.281,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.281 s  ops=78067 ops/s  throughput=4.76 GiB/s
+"
+2025-11-20 13:18:54,496,77937.0,4.76,1.283,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.283 s  ops=77937 ops/s  throughput=4.76 GiB/s
+"
+2025-11-20 13:19:24,512,77869.0,4.75,1.284,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.284 s  ops=77869 ops/s  throughput=4.75 GiB/s
+"
+2025-11-20 13:19:54,528,77752.0,4.75,1.286,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.286 s  ops=77752 ops/s  throughput=4.75 GiB/s
+"
+2025-11-20 13:20:24,544,77722.0,4.74,1.287,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.287 s  ops=77722 ops/s  throughput=4.74 GiB/s
+"
+2025-11-20 13:20:54,560,77650.0,4.74,1.288,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.288 s  ops=77650 ops/s  throughput=4.74 GiB/s
+"
+2025-11-20 13:21:23,576,77578.0,4.73,1.289,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.289 s  ops=77578 ops/s  throughput=4.73 GiB/s
+"
+2025-11-20 13:21:53,592,77447.0,4.73,1.291,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.291 s  ops=77447 ops/s  throughput=4.73 GiB/s
+"
+2025-11-20 13:22:22,608,77157.0,4.71,1.296,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.296 s  ops=77157 ops/s  throughput=4.71 GiB/s
+"
+2025-11-20 13:22:52,624,76730.0,4.68,1.303,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.303 s  ops=76730 ops/s  throughput=4.68 GiB/s
+"
+2025-11-20 13:23:22,640,76645.0,4.68,1.305,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.305 s  ops=76645 ops/s  throughput=4.68 GiB/s
+"
+2025-11-20 13:23:52,656,76551.0,4.67,1.306,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.306 s  ops=76551 ops/s  throughput=4.67 GiB/s
+"
+2025-11-20 13:24:22,672,76389.0,4.66,1.309,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.309 s  ops=76389 ops/s  throughput=4.66 GiB/s
+"
+2025-11-20 13:24:52,688,76316.0,4.66,1.31,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.310 s  ops=76316 ops/s  throughput=4.66 GiB/s
+"
+2025-11-20 13:25:22,704,76191.0,4.65,1.312,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.312 s  ops=76191 ops/s  throughput=4.65 GiB/s
+"
+2025-11-20 13:25:52,720,76101.0,4.64,1.314,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.314 s  ops=76101 ops/s  throughput=4.64 GiB/s
+"
+2025-11-20 13:26:22,736,75951.0,4.64,1.317,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.317 s  ops=75951 ops/s  throughput=4.64 GiB/s
+"
+2025-11-20 13:26:51,752,75861.0,4.63,1.318,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.318 s  ops=75861 ops/s  throughput=4.63 GiB/s
+"
+2025-11-20 13:27:22,768,75714.0,4.62,1.321,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.321 s  ops=75714 ops/s  throughput=4.62 GiB/s
+"
+2025-11-20 13:27:52,784,75638.0,4.62,1.322,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.322 s  ops=75638 ops/s  throughput=4.62 GiB/s
+"
+2025-11-20 13:28:22,800,75477.0,4.61,1.325,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.325 s  ops=75477 ops/s  throughput=4.61 GiB/s
+"
+2025-11-20 13:28:52,816,75377.0,4.6,1.327,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.327 s  ops=75377 ops/s  throughput=4.60 GiB/s
+"
+2025-11-20 13:29:22,832,75247.0,4.59,1.329,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.329 s  ops=75247 ops/s  throughput=4.59 GiB/s
+"
+2025-11-20 13:29:52,848,75122.0,4.59,1.331,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.331 s  ops=75122 ops/s  throughput=4.59 GiB/s
+"
+2025-11-20 13:30:22,864,75028.0,4.58,1.333,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.333 s  ops=75028 ops/s  throughput=4.58 GiB/s
+"
+2025-11-20 13:30:52,880,76994.0,4.7,1.299,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.299 s  ops=76994 ops/s  throughput=4.70 GiB/s
+"
+2025-11-20 13:31:22,896,77704.0,4.74,1.287,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.287 s  ops=77704 ops/s  throughput=4.74 GiB/s
+"
+2025-11-20 13:31:51,912,77790.0,4.75,1.286,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.286 s  ops=77790 ops/s  throughput=4.75 GiB/s
+"
+2025-11-20 13:32:21,928,78380.0,4.78,1.276,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.276 s  ops=78380 ops/s  throughput=4.78 GiB/s
+"
+2025-11-20 13:32:51,944,78239.0,4.78,1.278,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.278 s  ops=78239 ops/s  throughput=4.78 GiB/s
+"
+2025-11-20 13:33:21,960,78494.0,4.79,1.274,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.274 s  ops=78494 ops/s  throughput=4.79 GiB/s
+"
+2025-11-20 13:33:50,976,78201.0,4.77,1.279,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.279 s  ops=78201 ops/s  throughput=4.77 GiB/s
+"
+2025-11-20 13:34:20,992,78111.0,4.77,1.28,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.280 s  ops=78111 ops/s  throughput=4.77 GiB/s
+"
+2025-11-20 13:34:50,1008,78034.0,4.76,1.281,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.281 s  ops=78034 ops/s  throughput=4.76 GiB/s
+"
+2025-11-20 13:35:20,1024,77745.0,4.75,1.286,0,,"[client] op=READ msg=65536 qd=64 span=1073741824 align=256 mtu=1024
+[client] done: iters=100000 msg=65536 qd=64 span=1073741824 pattern=random
+[client] elapsed=1.286 s  ops=77745 ops/s  throughput=4.75 GiB/s
+"
