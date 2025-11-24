@@ -33,14 +33,14 @@ SSH_BIN = "ssh"
 SCP_BIN = "scp"
 
 # Command to launch gpu_server on GPU host (run once, persistent)
-GPU_SERVER_CMD = "./gpu_server mlx5_1 1G 18515 1 3 1024"
+GPU_SERVER_CMD = "./gpu_server mlx5_1 1M 18515 1 3 1024"
 
 # Command template to launch gpu_memhog on GPU host
 # {blocks} will be substituted
 GPU_MEMHOG_CMD_TEMPLATE = "./gpu_memhog -op=rw --blocks={blocks}"
 
 # Command to run on CPU server (local). Use the full command line you gave.
-CPU_CLIENT_CMD = "/home/x_peic/SkyGDR/src/bin/cpu_client 10.200.0.27 18515 mlx5_1 100000 65536 read 1 3 64 1G random 256 1024"
+CPU_CLIENT_CMD = "/home/x_peic/SkyGDR/src/bin/cpu_client 10.200.0.27 18515 mlx5_1 100000 65536 read 1 3 64 1M random 256 1024"
 
 # Sweep parameters
 BLOCK_START = 0
@@ -48,7 +48,7 @@ BLOCK_STEP = 16
 BLOCK_MAX = 1024   # inclusive upper bound; adjust as needed
 # memhog runs up to 60s, but we will wait only for client to finish then kill
 MEMHOG_RUNTIME_SEC = 60
-WAIT_AFTER_MEMHOG_START = 2.0  # wait before starting client
+WAIT_AFTER_MEMHOG_START = 1.0  # wait before starting client
 
 # Timeouts
 CLIENT_TIMEOUT = 120  # seconds to wait for the cpu_client to finish before killing
@@ -208,6 +208,47 @@ def main():
         writer = csv.writer(csvf)
         writer.writerow(["timestamp", "blocks", "ops_per_s", "throughput_gib_s",
                         "elapsed_s", "client_retcode", "notes", "raw_output"])
+
+        # warm up
+        for _ in range(5):
+            print("=== Warming Up ===\n")
+            
+            # ensure gpu_server running once
+            ensure_gpu_server_running()
+
+            # ensure no leftover memhog
+            ssh_kill_by_cmdpattern("gpu_memhog")
+
+            # start memhog with blocks=b
+            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(blocks=0)
+            remote_log = f"memhog_blocks_{0}.log"
+            print(f"Starting remote memhog: {memhog_cmd}")
+            rc, out, err = ssh_run_nohup_background(
+                memhog_cmd, logname=remote_log)
+            if rc != 0:
+                notes = f"memhog start failed rc={rc} stderr={err}"
+                print(notes)
+            else:
+                print("memhog started, out:", out)
+
+            # wait for memhog to ramp
+            print(
+                f"Waiting {WAIT_AFTER_MEMHOG_START:.1f}s for memhog to ramp...")
+            time.sleep(WAIT_AFTER_MEMHOG_START)
+
+            # run local cpu_client
+            print("Running local cpu_client command:")
+            print("  ", CPU_CLIENT_CMD)
+            retcode, output = run_local_client_and_capture(CPU_CLIENT_CMD)
+            print("Client returned", retcode)
+            print("Client output (truncated 300 chars):")
+            print(output[:300])
+
+            # stop memhog now
+            print("Stopping remote memhog...")
+            ssh_kill_by_cmdpattern("gpu_memhog")
+            time.sleep(0.5)
+
 
         # sweep blocks
         b = BLOCK_START
