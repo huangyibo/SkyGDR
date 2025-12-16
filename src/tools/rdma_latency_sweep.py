@@ -33,20 +33,25 @@ SSH_BIN = "ssh"
 SCP_BIN = "scp"
 
 # Command to launch gpu_server on GPU host (run once, persistent)
-GPU_SERVER_CMD = "./gpu_server mlx5_1 1M 18515 1 3 1024"
+GPU_SERVER_CMD = "./gpu_server mlx5_1 1G 18515 1 3 1024"
 
 # Command template to launch gpu_memhog on GPU host
 # {blocks} will be substituted
-GPU_MEMHOG_CMD_TEMPLATE = "./gpu_memhog -op=rw --blocks={blocks}"
+# GPU_MEMHOG_CMD_TEMPLATE = "./gpu_memhog -op=rw --blocks={blocks}"
+GPU_MEMHOG_CMD_TEMPLATE = "./gpu_be_pure_computation_task --op=L2_PRESSURE={fraction}:60"
 
 # Command to run on CPU server (local). Use the full command line you gave.
-CPU_CLIENT_CMD = "/home/x_peic/SkyGDR/src/bin/cpu_client 10.200.0.27 18515 mlx5_1 100000 65536 read 1 3 64 1M random 256 1024"
+CPU_CLIENT_CMD = "/home/x_peic/SkyGDR/src/bin/cpu_client 10.200.0.27 18515 mlx5_1 100000 65536 read 1 3 64 1G random 256 1024"
 
 # Sweep parameters
 BLOCK_START = 0
 BLOCK_STEP = 16
 BLOCK_MAX = 1024   # inclusive upper bound; adjust as needed
 # memhog runs up to 60s, but we will wait only for client to finish then kill
+FRACTION_START = 0.1
+FRACTION_STEP = 0.1
+FRACTION_MAX = 1.0   # inclusive upper bound; adjust as needed
+
 MEMHOG_RUNTIME_SEC = 60
 WAIT_AFTER_MEMHOG_START = 1.0  # wait before starting client
 
@@ -93,14 +98,14 @@ def ssh_run_nohup_background(cmd,
     if logname is None:
         logname = "nohup_remote.log"
 
-    # 激活 conda 的代码（适用于大多数 conda 安装）
+    # conda initialization
     conda_init = (
         "source ~/anaconda3/etc/profile.d/conda.sh || "
         "source ~/miniconda3/etc/profile.d/conda.sh || "
         "source ~/miniforge3/etc/profile.d/conda.sh"
     )
 
-    # 构造远端执行的完整命令
+    # construct gpu server command
     full = (
         f"{conda_init} && "
         f"conda activate rdma_env && "
@@ -217,23 +222,23 @@ def main():
             ensure_gpu_server_running()
 
             # ensure no leftover memhog
-            ssh_kill_by_cmdpattern("gpu_memhog")
+            ssh_kill_by_cmdpattern("gpu_pure_computation")
 
             # start memhog with blocks=b
-            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(blocks=0)
-            remote_log = f"memhog_blocks_{0}.log"
-            print(f"Starting remote memhog: {memhog_cmd}")
+            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(fraction=1.0)
+            remote_log = f"gpu_pure_computation_{1}.log"
+            print(f"Starting remote gpu pure computation: {memhog_cmd}")
             rc, out, err = ssh_run_nohup_background(
                 memhog_cmd, logname=remote_log)
             if rc != 0:
-                notes = f"memhog start failed rc={rc} stderr={err}"
+                notes = f"gpu pure computation start failed rc={rc} stderr={err}"
                 print(notes)
             else:
-                print("memhog started, out:", out)
+                print("gpu pure computation started, out:", out)
 
             # wait for memhog to ramp
             print(
-                f"Waiting {WAIT_AFTER_MEMHOG_START:.1f}s for memhog to ramp...")
+                f"Waiting {WAIT_AFTER_MEMHOG_START:.1f}s for gpu pure computation to ramp...")
             time.sleep(WAIT_AFTER_MEMHOG_START)
 
             # run local cpu_client
@@ -249,32 +254,31 @@ def main():
             ssh_kill_by_cmdpattern("gpu_memhog")
             time.sleep(0.5)
 
-
         # sweep blocks
-        b = BLOCK_START
-        while b <= BLOCK_MAX:
-            print(f"\n=== Testing blocks = {b} ===")
+        b = FRACTION_START
+        while b <= FRACTION_MAX:
+            print(f"\n=== Testing FRACTION = {b} ===")
             # ensure gpu_server running once
             ensure_gpu_server_running()
 
             # ensure no leftover memhog
-            ssh_kill_by_cmdpattern("gpu_memhog")
+            ssh_kill_by_cmdpattern("gpu_pure_computation")
 
             # start memhog with blocks=b
-            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(blocks=b)
-            remote_log = f"memhog_blocks_{b}.log"
-            print(f"Starting remote memhog: {memhog_cmd}")
+            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(fraction=b)
+            remote_log = f"gpu_pure_computation_{b}.log"
+            print(f"Starting remote gpu pure computation: {memhog_cmd}")
             rc, out, err = ssh_run_nohup_background(
                 memhog_cmd, logname=remote_log)
             if rc != 0:
-                notes = f"memhog start failed rc={rc} stderr={err}"
+                notes = f"gpu pure computation start failed rc={rc} stderr={err}"
                 print(notes)
             else:
-                print("memhog started, out:", out)
+                print("gpu pure computation started, out:", out)
 
             # wait for memhog to ramp
             print(
-                f"Waiting {WAIT_AFTER_MEMHOG_START:.1f}s for memhog to ramp...")
+                f"Waiting {WAIT_AFTER_MEMHOG_START:.1f}s for gpu pure computation to ramp...")
             time.sleep(WAIT_AFTER_MEMHOG_START)
 
             # run local cpu_client
@@ -292,8 +296,8 @@ def main():
             elapsed = parsed.get("elapsed_s")
 
             # stop memhog now
-            print("Stopping remote memhog...")
-            ssh_kill_by_cmdpattern("gpu_memhog")
+            print("Stopping remote gpu pure computation...")
+            ssh_kill_by_cmdpattern("gpu_pure_computation")
             time.sleep(0.5)
 
             # write CSV row
@@ -308,8 +312,8 @@ def main():
             os.fsync(csvf.fileno())
 
             # increment
-            b += BLOCK_STEP
-
+            # b += BLOCK_STEP
+            b += FRACTION_STEP
         # finished sweep
         if KILL_GPU_SERVER_AT_END:
             stop_gpu_server()
@@ -319,3 +323,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

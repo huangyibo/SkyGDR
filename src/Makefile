@@ -6,7 +6,7 @@ NVCC        := nvcc
 LIBS        := -libverbs -lpthread
 INCLUDES    := -I/usr/include -I/usr/include/infiniband
 LDFLAGS     := -L/usr/lib/x86_64-linux-gnu
-NVCCFLAGS   := -O3 -std=$(CXXSTD) $(INCLUDES) \
+NVCCFLAGS   := -ccbin /usr/bin/g++ -O3 -std=$(CXXSTD) $(INCLUDES) \
                -gencode arch=$(CUDA_ARCH),code=$(SM_ARCH) \
                -gencode arch=$(CUDA_ARCH),code=$(CUDA_ARCH)
 
@@ -15,7 +15,7 @@ CXXFLAGS     := -O3 -std=$(CXXSTD) $(INCLUDES)
 CXXLDFLAGS   := $(LIBS)
 
 
-all: clean gpu_server cpu_client gpu_minimal_memhog gpu_memhog release
+all: clean gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation release
 
 gpu_server: gpu_server.cu
 	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
@@ -29,9 +29,12 @@ gpu_minimal_memhog: gpu_be_memhog_minimal_task.cu
 gpu_memhog: gpu_be_memhog_task.cu
 	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
 
+gpu_pure_computation: gpu_be_pure_computation_task.cu
+	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
+
 clean:
-	rm -f gpu_server cpu_client gpu_minimal_memhog gpu_memhog
+	rm -f gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation
 
 release:
 	mkdir -p bin
-	mv gpu_server cpu_client gpu_minimal_memhog gpu_memhog ./bin
+	mv gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation ./bin
