@@ -38,10 +38,11 @@ GPU_SERVER_CMD = "./gpu_server mlx5_1 1G 18515 1 3 1024"
 # Command template to launch gpu_memhog on GPU host
 # {blocks} will be substituted
 # GPU_MEMHOG_CMD_TEMPLATE = "./gpu_memhog -op=rw --blocks={blocks}"
-GPU_MEMHOG_CMD_TEMPLATE = "./gpu_be_pure_computation_task --op=L2_PRESSURE={fraction}:60"
+# GPU_MEMHOG_CMD_TEMPLATE = "./gpu_be_pure_computation_task --op=L2_PRESSURE={fraction}:60"
+GPU_MEMHOG_CMD_TEMPLATE = "./gpu_pure_computation --op=HBM"
 
 # Command to run on CPU server (local). Use the full command line you gave.
-CPU_CLIENT_CMD = "/home/x_peic/SkyGDR/src/bin/cpu_client 10.200.0.27 18515 mlx5_1 100000 65536 read 1 3 64 1G random 256 1024"
+CPU_CLIENT_CMD = "/home/x_peic/SkyGDR/src/bin/cpu_client 10.200.0.27 18515 mlx5_1 100000 65536 read 1 3 64 1G seq 256 1024"
 
 # Sweep parameters
 BLOCK_START = 0
@@ -225,7 +226,7 @@ def main():
             ssh_kill_by_cmdpattern("gpu_pure_computation")
 
             # start memhog with blocks=b
-            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(fraction=1.0)
+            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format()
             remote_log = f"gpu_pure_computation_{1}.log"
             print(f"Starting remote gpu pure computation: {memhog_cmd}")
             rc, out, err = ssh_run_nohup_background(
@@ -265,7 +266,7 @@ def main():
             ssh_kill_by_cmdpattern("gpu_pure_computation")
 
             # start memhog with blocks=b
-            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format(fraction=b)
+            memhog_cmd = GPU_MEMHOG_CMD_TEMPLATE.format()
             remote_log = f"gpu_pure_computation_{b}.log"
             print(f"Starting remote gpu pure computation: {memhog_cmd}")
             rc, out, err = ssh_run_nohup_background(

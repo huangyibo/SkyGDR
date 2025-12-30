@@ -2,6 +2,7 @@
 // Build (SM80): nvcc gpu_be_pure_computation_task.cu -O3 -std=c++14 -o gpu_be_pure_computation_task -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80
 // How to run (L2 cache pressure): ./gpu_be_pure_computation_task --op=L2_PRESSURE=0.5:60
 // How to run (L1 cache or no pressure): ./gpu_be_pure_computation_task --op=Y/N
+// How to run (global memory pressure): ./gpu_be_pure_computation_task --op=HBM
 
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +13,15 @@
 
 // Define the size of the arrays within a single thread block
 #define BLOCK_ARRAY_SIZE 1024
+
+// consistent global memory pressure
+__global__ void memory_pressure_kernel(const float * __restrict__ input, float * __restrict__ output, size_t n) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    for (size_t i = idx; i < n; i += blockDim.x * gridDim.x) {
+        output[i] = input[i];
+    }
+}
 
 // --- Your original L1-heavy shared-memory kernel unchanged ---
 __global__ void l1_cache_loop_kernel(float *dummy_output)
@@ -69,8 +79,8 @@ __global__ void l2_persist_worker(float *buf, size_t elements, unsigned long lon
     float acc = 0.0f;
 
     // A light-weight loop that repeatedly streams through the persisted region
-    // for (unsigned long long it = 0; it < iterations; ++it)
-    while(1) {
+    for (unsigned long long it = 0; it < iterations; ++it)
+    {
         // Strided walk; this only reads within 'elements' so should not go to HBM after persisting
         for (size_t i = tid; i < elements; i += stride)
         {
@@ -79,7 +89,7 @@ __global__ void l2_persist_worker(float *buf, size_t elements, unsigned long lon
 
         // A tiny barrier: use threadfence_block to keep things visible inside the block
         // (not required, but helps avoid compiler/hardware reordering in some cases)
-       //  __syncthreads();
+        __syncthreads();
     }
 
     // Prevent the compiler from optimizing away accesses.
@@ -227,10 +237,11 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "Usage: %s --op=Y|N|L2_PRESSURE\n", argv[0]);
+        fprintf(stderr, "Usage: %s --op=Y|N|L2_PRESSURE|HBM\n", argv[0]);
         fprintf(stderr, "  --op=Y         : run original L1 cache heavy kernel (infinite loop)\n");
         fprintf(stderr, "  --op=N         : idle (do nothing)\n");
         fprintf(stderr, "  --op=L2_PRESSURE=<fraction>:<seconds>  : e.g. --op=L2_PRESSURE=0.5:30 (50%% of L2 for 30s)\n");
+        fprintf(stderr, "  --op=HBM       : keep pressure on global memory\n");
         return -1;
     }
 
@@ -248,6 +259,10 @@ int main(int argc, char **argv)
     else if (strncmp(argv[1], "--op=L2_PRESSURE=", 16) == 0)
     {
         op_flag = 2;
+    }
+    else if (strncmp(argv[1], "--op=HBM", 9) == 0)
+    {
+        op_flag = 3;
     }
     else
     {
@@ -298,6 +313,33 @@ int main(int argc, char **argv)
         }
         printf("[INFO] Starting L2 pressure with fraction=%f for %d seconds\n", fraction, seconds);
         run_l2_persisting_pressure(fraction, seconds);
+    }
+    else if (op_flag == 3)
+    {
+        // run global memory pressure kernel (infinite)
+        printf("[INFO] Launching global memory pressure kernel...\n");
+        // Allocate large buffers for memory pressure
+        size_t n = 1 << 28;
+        size_t size = n * sizeof(float);
+        float *d_input = nullptr;
+        float *d_output = nullptr;
+
+        cudaMalloc(&d_input, size);
+        cudaMalloc(&d_output, size);
+        // Initialize input buffer
+        cudaMemset(d_input, 1, size);
+
+        int threads_per_block = 256;
+        int num_blocks = (n + threads_per_block - 1) / threads_per_block;
+
+        while (true) {
+            memory_pressure_kernel<<<num_blocks, threads_per_block>>>(d_input, d_output, n);
+            cudaDeviceSynchronize();
+        }
+
+        // Cleanup pressure buffers
+        cudaFree(d_input);
+        cudaFree(d_output);
     }
     else
     {
