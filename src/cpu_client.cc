@@ -4,7 +4,7 @@
 //      -I/usr/include/infiniband -L/usr/lib/x86_64-linux-gnu -libverbs -lpthread
 //
 // Usage:
-//   ./cpu_client <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024]
+//   ./cpu_client <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=]
 // Example:
 //   ./cpu_client 192.168.1.10 18515 mlx5_1 100000 65536 read 1 3 64 1G random 256 1024
 //
@@ -73,6 +73,15 @@ static size_t parse_size(const char *s)
     if (v < 0)
         v = 0;
     return (size_t)v;
+}
+
+// Get a monotonic timestamp in nanoseconds (steady clock avoids wall-clock jumps).
+// We use this for per-op latency measurement.
+static inline uint64_t now_ns()
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 struct ConnInfo
@@ -149,7 +158,7 @@ int main(int argc, char **argv)
     if (argc < 10)
     {
         fprintf(stderr,
-                "Usage: %s <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024]\n",
+                "Usage: %s <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=]\n",
                 argv[0]);
         return 1;
     }
@@ -167,7 +176,26 @@ int main(int argc, char **argv)
     size_t span = (argc > argi) ? parse_size(argv[argi++]) : 0; // 0 -> will be set to remote len later
     const char *pattern = (argc > argi) ? argv[argi++] : "random";
     size_t align = (argc > argi) ? (size_t)atoi(argv[argi++]) : 256;
-    ibv_mtu mtu = (argc > argi && atoi(argv[argi]) == 2048) ? IBV_MTU_2048 : (argc > argi && atoi(argv[argi]) >= 4096 ? IBV_MTU_4096 : IBV_MTU_1024);
+    ibv_mtu mtu = IBV_MTU_1024;
+    if (argc > argi)
+    {
+        int mtu_arg = atoi(argv[argi]);
+        if (mtu_arg == 2048)
+            mtu = IBV_MTU_2048;
+        else if (mtu_arg >= 4096)
+            mtu = IBV_MTU_4096;
+        argi++;
+    }
+    // Latency sampling controls:
+    //  - sample: take 1 out of N completions to reduce overhead (N>=1).
+    //  - max_samples: cap total stored samples to bound memory (0 = no cap).
+    int sample = (argc > argi) ? atoi(argv[argi++]) : 1;
+    size_t max_samples = (argc > argi) ? (size_t)strtoull(argv[argi++], nullptr, 10) : 0;
+    // Time-series controls (for aligning with GPU logger):
+    //  - ts_ms: window size in ms (0 disables time-series output).
+    //  - ts_out: CSV output path; "-" or empty means stdout.
+    int ts_ms = (argc > argi) ? atoi(argv[argi++]) : 0;
+    const char *ts_out = (argc > argi) ? argv[argi++] : nullptr;
 
     // TCP control
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -258,9 +286,10 @@ int main(int argc, char **argv)
     if (qd < 1)
         qd = 1;
 
-    fprintf(stderr, "[client] op=%s msg=%zu qd=%d span=%zu align=%zu mtu=%d\n",
+    fprintf(stderr, "[client] op=%s msg=%zu qd=%d span=%zu align=%zu mtu=%d sample=%d max_samples=%zu ts_ms=%d ts_out=%s\n",
             do_read ? "READ" : "WRITE", msg, qd, span, align, (mtu == IBV_MTU_4096 ? 4096 : mtu == IBV_MTU_2048 ? 2048
-                                                                                                                : 1024));
+                                                                                                                : 1024),
+            sample, max_samples, ts_ms, ts_out ? ts_out : "-");
 
     // Local host buffer (we can reuse one buffer for all WRs)
     void *buf = nullptr;
@@ -318,9 +347,104 @@ int main(int argc, char **argv)
         }
     };
 
-    // Main loop: post bursts of up to qd WRs, then poll those completions
+    // Time-series CSV (optional): output one CSV line per window (ts_ms).
+    // This allows aligning RDMA latency with GPU metrics sampling.
+    FILE *ts_fp = nullptr;
+    if (ts_ms > 0)
+    {
+        if (ts_out && ts_out[0] && strcmp(ts_out, "-") != 0)
+            ts_fp = fopen(ts_out, "w");
+        else
+            ts_fp = stdout;
+        if (ts_fp)
+        {
+            fprintf(ts_fp, "ts_unix_ms,window_ms,ops,ops_per_s,throughput_gib_s,p50_us,p90_us,p99_us,p999_us,min_us,max_us,samples\n");
+            fflush(ts_fp);
+        }
+        else
+        {
+            fprintf(stderr, "[client] failed to open ts_out=%s\n", ts_out ? ts_out : "(null)");
+        }
+    }
+
+    // Main loop: post bursts of up to qd WRs, then poll those completions.
+    // We record per-WR start timestamps (indexed by wr_id) and compute completion latency.
     uint64_t total_posted = 0, total_completed = 0;
     auto t0 = std::chrono::high_resolution_clock::now();
+    std::vector<uint64_t> start_ns(qd, 0);
+    std::vector<uint64_t> lat_us;
+    // Per-window latency samples for time-series output.
+    std::vector<uint64_t> lat_us_win;
+    if (sample < 1)
+        sample = 1;
+    if (max_samples > 0)
+    {
+        uint64_t est = iters / (uint64_t)sample;
+        if (est > max_samples)
+            est = max_samples;
+        lat_us.reserve((size_t)est);
+    }
+    else if (iters <= 1000000ULL)
+    {
+        lat_us.reserve((size_t)(iters / (uint64_t)sample + 1));
+    }
+
+    // Time-series state: track last report time and last completion count.
+    auto last_report = std::chrono::steady_clock::now();
+    uint64_t last_completed = 0;
+
+    // Flush current window to CSV if time has elapsed or force=true at end.
+    // We compute window ops/s, throughput, and latency percentiles.
+    auto flush_window = [&](bool force) {
+        if (ts_ms <= 0 || !ts_fp)
+            return;
+        auto now = std::chrono::steady_clock::now();
+        auto dt_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(now - last_report).count();
+        if (!force && dt_ms < (uint64_t)ts_ms)
+            return;
+        uint64_t ops_win = total_completed - last_completed;
+        if (!force && ops_win == 0 && lat_us_win.empty())
+            return;
+        double sec_win = dt_ms / 1000.0;
+        if (sec_win <= 0.0)
+            sec_win = 1e-9;
+        double ops_s = ops_win / sec_win;
+        double gbps_win = ((double)msg * (double)ops_win) / (1024.0 * 1024.0 * 1024.0) / sec_win;
+
+        uint64_t p50 = 0, p90 = 0, p99 = 0, p999 = 0, minv = 0, maxv = 0;
+        if (!lat_us_win.empty())
+        {
+            std::sort(lat_us_win.begin(), lat_us_win.end());
+            auto pct = [&](double p) -> uint64_t
+            {
+                if (lat_us_win.empty())
+                    return 0;
+                double idx = p * (double)(lat_us_win.size() - 1);
+                size_t i = (size_t)idx;
+                return lat_us_win[i];
+            };
+            p50 = pct(0.50);
+            p90 = pct(0.90);
+            p99 = pct(0.99);
+            p999 = pct(0.999);
+            minv = lat_us_win.front();
+            maxv = lat_us_win.back();
+        }
+        uint64_t ts_unix_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::system_clock::now().time_since_epoch())
+                                  .count();
+        if (ops_win == 0 && lat_us_win.empty())
+            return;
+        fprintf(ts_fp, "%lu,%lu,%lu,%.3f,%.3f,%lu,%lu,%lu,%lu,%lu,%lu,%zu\n",
+                (unsigned long)ts_unix_ms, (unsigned long)dt_ms, (unsigned long)ops_win,
+                ops_s, gbps_win,
+                (unsigned long)p50, (unsigned long)p90, (unsigned long)p99, (unsigned long)p999,
+                (unsigned long)minv, (unsigned long)maxv, lat_us_win.size());
+        fflush(ts_fp);
+        lat_us_win.clear();
+        last_report = now;
+        last_completed = total_completed;
+    };
 
     while (total_posted < iters)
     {
@@ -330,6 +454,8 @@ int main(int argc, char **argv)
             off = next_off(std::string(pattern) == "random");
             wrs[i].wr.rdma.remote_addr = rinfo.addr + off;
             wrs[i].next = (i + 1 < burst) ? &wrs[i + 1] : nullptr;
+            // Record start time for this WR (wr_id == i).
+            start_ns[i] = now_ns();
         }
         ibv_send_wr *bad = nullptr;
         if (ibv_post_send(qp, &wrs[0], &bad))
@@ -356,9 +482,27 @@ int main(int argc, char **argv)
                         wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
                 return 4;
             }
+            // Completion timestamp; latency is end-start for this wr_id.
+            uint64_t end_ns = now_ns();
+            uint64_t sid = wc.wr_id;
+            if (sid < start_ns.size())
+            {
+                uint64_t dur_us = (end_ns - start_ns[sid]) / 1000;
+                // Sample every N-th completion to reduce overhead.
+                if ((total_completed % (uint64_t)sample) == 0)
+                {
+                    if (max_samples == 0 || lat_us.size() < max_samples)
+                        lat_us.push_back(dur_us);
+                    if (ts_ms > 0)
+                        lat_us_win.push_back(dur_us);
+                }
+            }
             comp++;
+            total_completed++;
+            // Emit time-series line when window ends.
+            if (ts_ms > 0)
+                flush_window(false);
         }
-        total_completed += burst;
     }
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -366,8 +510,39 @@ int main(int argc, char **argv)
     double ops = (double)total_completed / sec;
     double gbps = ((double)msg * (double)total_completed) / (1024.0 * 1024.0 * 1024.0) / sec;
 
+    // Final flush of the last window (if time-series enabled).
+    if (ts_ms > 0)
+        flush_window(true);
+    if (ts_fp && ts_fp != stdout)
+        fclose(ts_fp);
+
     printf("[client] done: iters=%lu msg=%zu qd=%d span=%zu pattern=%s\n", iters, msg, qd, span, pattern);
     printf("[client] elapsed=%.3f s  ops=%.0f ops/s  throughput=%.2f GiB/s\n", sec, ops, gbps);
+    if (!lat_us.empty())
+    {
+        std::sort(lat_us.begin(), lat_us.end());
+        auto pct = [&](double p) -> uint64_t
+        {
+            if (lat_us.empty())
+                return 0;
+            double idx = p * (double)(lat_us.size() - 1);
+            size_t i = (size_t)idx;
+            return lat_us[i];
+        };
+        uint64_t p50 = pct(0.50);
+        uint64_t p90 = pct(0.90);
+        uint64_t p99 = pct(0.99);
+        uint64_t p999 = pct(0.999);
+        uint64_t minv = lat_us.front();
+        uint64_t maxv = lat_us.back();
+        printf("[client] latency_us samples=%zu p50=%lu p90=%lu p99=%lu p999=%lu min=%lu max=%lu\n",
+               lat_us.size(), (unsigned long)p50, (unsigned long)p90, (unsigned long)p99, (unsigned long)p999,
+               (unsigned long)minv, (unsigned long)maxv);
+    }
+    else
+    {
+        printf("[client] latency_us samples=0\n");
+    }
 
     // tell server we are done
     char done = 1;
