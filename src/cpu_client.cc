@@ -372,9 +372,10 @@ int main(int argc, char **argv)
     uint64_t total_posted = 0, total_completed = 0;
     auto t0 = std::chrono::high_resolution_clock::now();
     std::vector<uint64_t> start_ns(qd, 0);
-    std::vector<uint64_t> lat_us;
-    // Per-window latency samples for time-series output.
-    std::vector<uint64_t> lat_us_win;
+    // Store latencies in microseconds as double for higher precision.
+    std::vector<double> lat_us;
+    // Per-window latency samples for time-series output (also double).
+    std::vector<double> lat_us_win;
     if (sample < 1)
         sample = 1;
     if (max_samples > 0)
@@ -411,17 +412,19 @@ int main(int argc, char **argv)
         double ops_s = ops_win / sec_win;
         double gbps_win = ((double)msg * (double)ops_win) / (1024.0 * 1024.0 * 1024.0) / sec_win;
 
-        uint64_t p50 = 0, p90 = 0, p99 = 0, p999 = 0, minv = 0, maxv = 0;
+        double p50 = 0.0, p90 = 0.0, p99 = 0.0, p999 = 0.0, minv = 0.0, maxv = 0.0;
         if (!lat_us_win.empty())
         {
             std::sort(lat_us_win.begin(), lat_us_win.end());
-            auto pct = [&](double p) -> uint64_t
+            auto pct = [&](double p) -> double
             {
                 if (lat_us_win.empty())
-                    return 0;
+                    return 0.0;
                 double idx = p * (double)(lat_us_win.size() - 1);
-                size_t i = (size_t)idx;
-                return lat_us_win[i];
+                size_t i0 = (size_t)idx;
+                size_t i1 = (i0 + 1 < lat_us_win.size()) ? (i0 + 1) : i0;
+                double frac = idx - (double)i0;
+                return lat_us_win[i0] * (1.0 - frac) + lat_us_win[i1] * frac;
             };
             p50 = pct(0.50);
             p90 = pct(0.90);
@@ -435,11 +438,11 @@ int main(int argc, char **argv)
                                   .count();
         if (ops_win == 0 && lat_us_win.empty())
             return;
-        fprintf(ts_fp, "%lu,%lu,%lu,%.3f,%.3f,%lu,%lu,%lu,%lu,%lu,%lu,%zu\n",
+        fprintf(ts_fp, "%lu,%lu,%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%zu\n",
                 (unsigned long)ts_unix_ms, (unsigned long)dt_ms, (unsigned long)ops_win,
                 ops_s, gbps_win,
-                (unsigned long)p50, (unsigned long)p90, (unsigned long)p99, (unsigned long)p999,
-                (unsigned long)minv, (unsigned long)maxv, lat_us_win.size());
+                p50, p90, p99, p999,
+                minv, maxv, lat_us_win.size());
         fflush(ts_fp);
         lat_us_win.clear();
         last_report = now;
@@ -487,7 +490,7 @@ int main(int argc, char **argv)
             uint64_t sid = wc.wr_id;
             if (sid < start_ns.size())
             {
-                uint64_t dur_us = (end_ns - start_ns[sid]) / 1000;
+                double dur_us = (double)(end_ns - start_ns[sid]) / 1000.0;
                 // Sample every N-th completion to reduce overhead.
                 if ((total_completed % (uint64_t)sample) == 0)
                 {
@@ -521,23 +524,24 @@ int main(int argc, char **argv)
     if (!lat_us.empty())
     {
         std::sort(lat_us.begin(), lat_us.end());
-        auto pct = [&](double p) -> uint64_t
+        auto pct = [&](double p) -> double
         {
             if (lat_us.empty())
-                return 0;
+                return 0.0;
             double idx = p * (double)(lat_us.size() - 1);
-            size_t i = (size_t)idx;
-            return lat_us[i];
+            size_t i0 = (size_t)idx;
+            size_t i1 = (i0 + 1 < lat_us.size()) ? (i0 + 1) : i0;
+            double frac = idx - (double)i0;
+            return lat_us[i0] * (1.0 - frac) + lat_us[i1] * frac;
         };
-        uint64_t p50 = pct(0.50);
-        uint64_t p90 = pct(0.90);
-        uint64_t p99 = pct(0.99);
-        uint64_t p999 = pct(0.999);
-        uint64_t minv = lat_us.front();
-        uint64_t maxv = lat_us.back();
-        printf("[client] latency_us samples=%zu p50=%lu p90=%lu p99=%lu p999=%lu min=%lu max=%lu\n",
-               lat_us.size(), (unsigned long)p50, (unsigned long)p90, (unsigned long)p99, (unsigned long)p999,
-               (unsigned long)minv, (unsigned long)maxv);
+        double p50 = pct(0.50);
+        double p90 = pct(0.90);
+        double p99 = pct(0.99);
+        double p999 = pct(0.999);
+        double minv = lat_us.front();
+        double maxv = lat_us.back();
+        printf("[client] latency_us samples=%zu p50=%.3f p90=%.3f p99=%.3f p999=%.3f min=%.3f max=%.3f\n",
+               lat_us.size(), p50, p90, p99, p999, minv, maxv);
     }
     else
     {
