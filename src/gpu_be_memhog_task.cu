@@ -8,7 +8,7 @@
 //   --op=copy    : copy a[] -> b[] (memcpy-like; often saturates BW)
 //
 // Duration-based: run for --seconds (default 60s). Also supports --iters.
-// Grid control: --blocks, --threads. Working set: --gb.
+// Grid control: --blocks, --threads, --streams. Working set: --gb.
 //
 // Build (SM80): nvcc gpu_be_memhog_task.cu -O3 -std=c++14 -o gpu_be_memhog_task -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80
 //
@@ -107,6 +107,22 @@ __global__ void k_read_write(const float *__restrict__ a,
     }
 }
 
+// Copy with vectorized float4 to increase memory throughput
+__global__ void k_copy_vec4(const float4 *__restrict__ a,
+                            float4 *__restrict__ b,
+                            size_t N4, int iters)
+{
+    const size_t idx0 = blockIdx.x * blockDim.x + threadIdx.x;
+    const size_t stride = (size_t)blockDim.x * gridDim.x;
+    for (int t = 0; t < iters; ++t)
+    {
+        for (size_t i = idx0; i < N4; i += stride)
+        {
+            b[i] = a[i];
+        }
+    }
+}
+
 // Copy: a[] -> b[] (memcpy-like)
 __global__ void k_copy(const float *__restrict__ a,
                        float *__restrict__ b,
@@ -132,6 +148,8 @@ struct Args
     int iters = 100;  // per kernel launch loop-count
     int seconds = 60; // wall-time to run (overrides iters loop if >0)
     OpKind op = OP_RW;
+    int streams = 1;  // concurrent streams to increase MLP
+    int vec = 1;      // 1 = scalar, 4 = vectorized float4 (copy op only)
 };
 
 static OpKind parse_op(const char *s)
@@ -167,10 +185,15 @@ static void parse_args(int argc, char **argv, Args &a)
             a.seconds = atoi(argv[i] + 10);
         else if (!strncmp(argv[i], "--op=", 5))
             a.op = parse_op(argv[i] + 5);
+        else if (!strncmp(argv[i], "--streams=", 10))
+            a.streams = atoi(argv[i] + 10);
+        else if (!strncmp(argv[i], "--vec=", 6))
+            a.vec = atoi(argv[i] + 6);
         else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
         {
             printf("Usage: %s [--device=N] [--gb=16] [--blocks=2048] [--threads=256]\n"
-                   "           [--iters=100] [--seconds=60] [--op=rw|read|write|copy]\n",
+                   "           [--iters=100] [--seconds=60] [--op=rw|read|write|copy]\n"
+                   "           [--streams=1] [--vec=1|4] (vec=4 only for op=copy)\n",
                    argv[0]);
             exit(0);
         }
@@ -206,6 +229,10 @@ int main(int argc, char **argv)
         args.threads = 256;
     if (args.threads > 1024)
         args.threads = 1024;
+    if (args.streams <= 0)
+        args.streams = 1;
+    if (args.vec != 1 && args.vec != 4)
+        args.vec = 1;
 
     // Time-bounded loop
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -224,7 +251,18 @@ int main(int argc, char **argv)
         k_write_only<<<args.blocks, args.threads>>>(b, elems, 1);
         break;
     case OP_COPY:
-        k_copy<<<args.blocks, args.threads>>>(a, b, elems, 1);
+        if (args.vec == 4 && (elems % 4 == 0))
+        {
+            size_t n4 = elems / 4;
+            k_copy_vec4<<<args.blocks, args.threads>>>(
+                reinterpret_cast<const float4 *>(a),
+                reinterpret_cast<float4 *>(b),
+                n4, 1);
+        }
+        else
+        {
+            k_copy<<<args.blocks, args.threads>>>(a, b, elems, 1);
+        }
         break;
     }
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -254,23 +292,41 @@ int main(int argc, char **argv)
     CUDA_CHECK(cudaEventCreate(&ev1));
 
     double total_gpu_ms = 0.0;
+    std::vector<cudaStream_t> streams(args.streams);
+    for (int i = 0; i < args.streams; ++i)
+        CUDA_CHECK(cudaStreamCreateWithFlags(&streams[i], cudaStreamNonBlocking));
+
     while (true)
     {
         CUDA_CHECK(cudaEventRecord(ev0));
-        switch (args.op)
+        for (int si = 0; si < args.streams; ++si)
         {
-        case OP_RW:
-            k_read_write<<<args.blocks, args.threads>>>(a, b, elems, args.iters);
-            break;
-        case OP_READ:
-            k_read_only<<<args.blocks, args.threads>>>(a, elems, args.iters);
-            break;
-        case OP_WRITE:
-            k_write_only<<<args.blocks, args.threads>>>(b, elems, args.iters);
-            break;
-        case OP_COPY:
-            k_copy<<<args.blocks, args.threads>>>(a, b, elems, args.iters);
-            break;
+            switch (args.op)
+            {
+            case OP_RW:
+                k_read_write<<<args.blocks, args.threads, 0, streams[si]>>>(a, b, elems, args.iters);
+                break;
+            case OP_READ:
+                k_read_only<<<args.blocks, args.threads, 0, streams[si]>>>(a, elems, args.iters);
+                break;
+            case OP_WRITE:
+                k_write_only<<<args.blocks, args.threads, 0, streams[si]>>>(b, elems, args.iters);
+                break;
+            case OP_COPY:
+                if (args.vec == 4 && (elems % 4 == 0))
+                {
+                    size_t n4 = elems / 4;
+                    k_copy_vec4<<<args.blocks, args.threads, 0, streams[si]>>>(
+                        reinterpret_cast<const float4 *>(a),
+                        reinterpret_cast<float4 *>(b),
+                        n4, args.iters);
+                }
+                else
+                {
+                    k_copy<<<args.blocks, args.threads, 0, streams[si]>>>(a, b, elems, args.iters);
+                }
+                break;
+            }
         }
         CUDA_CHECK(cudaEventRecord(ev1));
         CUDA_CHECK(cudaEventSynchronize(ev1));
@@ -295,13 +351,15 @@ int main(int argc, char **argv)
                                                 : args.op == OP_WRITE  ? "write"
                                                                        : "copy");
 
-    printf("[memhog] op=%s gb=%.2f elems=%zu blocks=%d threads=%d iters/launch=%d launches=%d\n",
-           opname, args.gb, elems, args.blocks, args.threads, args.iters, launches);
+    printf("[memhog] op=%s gb=%.2f elems=%zu blocks=%d threads=%d iters/launch=%d launches=%d streams=%d vec=%d\n",
+           opname, args.gb, elems, args.blocks, args.threads, args.iters, launches, args.streams, args.vec);
     printf("[memhog] GPU-time total=%.3f ms, processed=%.2f GiB, avg BW=%.2f GiB/s\n",
            total_gpu_ms, gb_total, gbps);
     printf("[memhog] elapsed wall=%.2f s\n", elapsed_s);
 
     // Keep device alive a moment in case profiler attaches
     CUDA_CHECK(cudaDeviceSynchronize());
+    for (int i = 0; i < args.streams; ++i)
+        cudaStreamDestroy(streams[i]);
     return 0;
 }
