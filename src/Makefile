@@ -15,7 +15,7 @@ CXXFLAGS     := -O3 -std=$(CXXSTD) $(INCLUDES)
 CXXLDFLAGS   := $(LIBS)
 
 
-all: clean gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation release
+all: clean gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation gpu_pcie_memcpy release
 
 gpu_server: gpu_server.cu
 	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
@@ -32,9 +32,12 @@ gpu_memhog: gpu_be_memhog_task.cu
 gpu_pure_computation: gpu_be_pure_computation_task.cu
 	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
 
+gpu_pcie_memcpy: gpu_be_pcie_memcpy_task.cu
+	$(NVCC) $< -o $@ $(NVCCFLAGS) $(LDFLAGS) $(LIBS)
+
 clean:
-	rm -f gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation
+	rm -f gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation gpu_pcie_memcpy
 
 release:
 	mkdir -p bin
-	mv gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation ./bin
+	mv gpu_server cpu_client gpu_minimal_memhog gpu_memhog gpu_pure_computation gpu_pcie_memcpy ./bin
