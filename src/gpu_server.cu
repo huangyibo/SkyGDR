@@ -6,6 +6,10 @@
 //
 // Usage:
 //   ./gpu_server <ib_dev> <mr_size:{bytes|[0-9]+[KMG]}> <tcp_port> <port> <gid_idx> [mtu=1024]
+//
+// Behavior:
+//   - The server keeps listening and can serve multiple clients sequentially.
+//   - Stop it with Ctrl-C when you are done.
 // Example:
 //   ./gpu_server mlx5_1 1G 18515 1 3 1024
 
@@ -29,6 +33,7 @@ static void die(const char *m)
     perror(m);
     exit(1);
 }
+
 static void xs(int s, const void *b, size_t l)
 {
     size_t o = 0;
@@ -181,27 +186,17 @@ int main(int argc, char **argv)
     }
     if (!ibdev)
         die("dev not found");
+
     ibv_context *ctx = ibv_open_device(ibdev);
     if (!ctx)
         die("open_device");
     ibv_pd *pd = ibv_alloc_pd(ctx);
     if (!pd)
         die("alloc_pd");
+    // Create a CQ once and reuse it across connections.
     ibv_cq *cq = ibv_create_cq(ctx, 4096, nullptr, nullptr, 0);
     if (!cq)
         die("create_cq");
-
-    ibv_qp_init_attr qia{};
-    qia.qp_type = IBV_QPT_RC;
-    qia.send_cq = cq;
-    qia.recv_cq = cq;
-    qia.cap.max_send_wr = 4096;
-    qia.cap.max_recv_wr = 1;
-    qia.cap.max_send_sge = 1;
-    qia.cap.max_recv_sge = 1;
-    ibv_qp *qp = ibv_create_qp(pd, &qia);
-    if (!qp)
-        die("create_qp");
 
     // CUDA MR
     void *d_buf = nullptr;
@@ -217,38 +212,58 @@ int main(int argc, char **argv)
 
     fprintf(stderr, "[server] MR addr=0x%lx len=%zu rkey=0x%x\n", (unsigned long)(uintptr_t)d_buf, mr_bytes, mr->rkey);
 
-    // Control channel
+    // Control channel: listen and serve clients sequentially.
     int ls = make_listen_socket(tcp_port);
-    int s = accept(ls, nullptr, nullptr);
-    if (s < 0)
-        die("accept");
-    int one = 1;
-    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    fprintf(stderr, "[server] listening on tcp_port=%d\n", tcp_port);
 
-    ConnInfo local{}, remote{};
-    local.qpn = qp->qp_num;
-    local.port = port;
-    local.gid_idx = (uint8_t)gid_idx;
-    query_gid(ctx, port, gid_idx, local.gid);
-
-    // Client sends first, then server replies
-    xr(s, &remote, sizeof(remote));
-    xs(s, &local, sizeof(local));
-
-    qp_to_rtr_rts_roce(qp, remote, port, gid_idx, mtu);
-
-    struct
+    while (true)
     {
-        uint32_t rkey;
-        uint64_t addr;
-        uint64_t len;
-    } rinfo{mr->rkey, (uint64_t)(uintptr_t)d_buf, (uint64_t)mr_bytes};
-    xs(s, &rinfo, sizeof(rinfo));
+        int s = accept(ls, nullptr, nullptr);
+        if (s < 0)
+            die("accept");
+        int one = 1;
+        setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
-    // wait for client "done"
-    char done{};
-    xr(s, &done, 1);
-    close(s);
+        // Create a fresh QP per client so we can reconnect safely.
+        ibv_qp_init_attr qia{};
+        qia.qp_type = IBV_QPT_RC;
+        qia.send_cq = cq;
+        qia.recv_cq = cq;
+        qia.cap.max_send_wr = 4096;
+        qia.cap.max_recv_wr = 1;
+        qia.cap.max_send_sge = 1;
+        qia.cap.max_recv_sge = 1;
+        ibv_qp *qp = ibv_create_qp(pd, &qia);
+        if (!qp)
+            die("create_qp");
+
+        ConnInfo local{}, remote{};
+        local.qpn = qp->qp_num;
+        local.port = port;
+        local.gid_idx = (uint8_t)gid_idx;
+        query_gid(ctx, port, gid_idx, local.gid);
+
+        // Client sends first, then server replies.
+        xr(s, &remote, sizeof(remote));
+        xs(s, &local, sizeof(local));
+
+        qp_to_rtr_rts_roce(qp, remote, port, gid_idx, mtu);
+
+        struct
+        {
+            uint32_t rkey;
+            uint64_t addr;
+            uint64_t len;
+        } rinfo{mr->rkey, (uint64_t)(uintptr_t)d_buf, (uint64_t)mr_bytes};
+        xs(s, &rinfo, sizeof(rinfo));
+
+        // wait for client "done"
+        char done{};
+        xr(s, &done, 1);
+        close(s);
+        ibv_destroy_qp(qp);
+    }
+
     close(ls);
     return 0;
 }
