@@ -9,7 +9,7 @@ from NVML PCIe throughput and the GPU's PCIe link speed (gen/width).
 
 Notes:
 - NVML nvmlDeviceGetPcieThroughput returns a moving-average throughput sample
-  in KB/s for TX/RX (host<->device). See NVML docs/manpages. 
+  in KB/s for TX/RX (host<->device). In practice this is commonly treated as KiB/s.
 - "Utilization %" here means: throughput / (PCIe link theoretical one-direction bandwidth).
   This is an approximation but is usually good enough to spot contention and correlate with tail latency.
 
@@ -35,7 +35,7 @@ def safe_call(fn, default=None):
         return default
 
 
-def pcie_per_lane_gbps(gen: int) -> float:
+def pcie_per_lane_GB_s(gen: int) -> float:
     """Approx effective GB/s per lane per direction for PCIe generations.
 
     Uses commonly cited usable throughput approximations:
@@ -54,9 +54,17 @@ def pcie_per_lane_gbps(gen: int) -> float:
     return table.get(int(gen or 0), 0.0)
 
 
-def kbps_to_gbps(kbps: float) -> float:
-    # NVML reports KB/s; in practice this is typically KiB/s. We keep 1024 for consistency.
-    return (kbps * 1024.0) / 1e9
+def kib_s_to_GB_s(kib_s: float) -> float:
+    # NVML reports KB/s; we treat it as KiB/s and convert to decimal GB/s.
+    return (kib_s * 1024.0) / 1e9
+
+
+def kib_s_to_GiB_s(kib_s: float) -> float:
+    return kib_s / (1024.0 * 1024.0)
+
+
+def GB_s_to_GiB_s(GB_s: float) -> float:
+    return (GB_s * 1e9) / (1024.0 * 1024.0 * 1024.0)
 
 
 def _to_float(v):
@@ -92,38 +100,70 @@ def plot_csv(csv_path: str, out_path: str = None, show: bool = False, title: str
             return 3
         cols = reader.fieldnames or []
 
+    # Prefer relative time if present; fallback to unix timestamp; else use sample index.
+    time_col = None
+    if "t_ms" in cols:
+        time_col = "t_ms"
+    elif "ts_unix_ms" in cols:
+        time_col = "ts_unix_ms"
+
     ts_ms = []
     data = {c: [] for c in cols}
     for r in rows:
-        if "ts_unix_ms" not in r:
+        if not time_col:
             continue
-        t = _to_float(r.get("ts_unix_ms", "nan"))
+        if time_col not in r:
+            continue
+        t = _to_float(r.get(time_col, "nan"))
         ts_ms.append(t)
         for c in cols:
             data[c].append(_to_float(r.get(c, "nan")))
 
-    if not ts_ms:
-        print("[plot] no ts_unix_ms in csv", file=sys.stderr)
-        return 4
+    if not time_col:
+        # Fallback: plot against row index.
+        ts_ms = list(range(len(rows)))
+        for c in cols:
+            data[c] = [_to_float(r.get(c, "nan")) for r in rows]
+        time_col = "sample_idx"
 
-    t0 = ts_ms[0]
-    t_s = [(x - t0) / 1000.0 for x in ts_ms]
+    if time_col == "t_ms":
+        t_s = [x / 1000.0 for x in ts_ms]
+    elif time_col == "ts_unix_ms":
+        t0 = ts_ms[0]
+        t_s = [(x - t0) / 1000.0 for x in ts_ms]
+    else:
+        t_s = [float(x) for x in ts_ms]
 
     fig, axes = plt.subplots(3, 1, sharex=True, figsize=(12, 8))
     ax_pcie, ax_util, ax_clk = axes
 
     # --- PCIe subplot ---
     pcie_plotted = False
-    if "pcie_tx_kbps" in data:
-        tx_gbps = [kbps_to_gbps(x) if not _is_nan(x) else float("nan") for x in data["pcie_tx_kbps"]]
-        ax_pcie.plot(t_s, tx_gbps, label="pcie_tx_gbps")
+    if "pcie_tx_GiB_s" in data:
+        ax_pcie.plot(t_s, data["pcie_tx_GiB_s"], label="pcie_tx_GiB_s")
         pcie_plotted = True
-    if "pcie_rx_kbps" in data:
-        rx_gbps = [kbps_to_gbps(x) if not _is_nan(x) else float("nan") for x in data["pcie_rx_kbps"]]
-        ax_pcie.plot(t_s, rx_gbps, label="pcie_rx_gbps")
+    elif "pcie_tx_GB_s" in data:
+        tx_GiB_s = [GB_s_to_GiB_s(x) if not _is_nan(x) else float("nan") for x in data["pcie_tx_GB_s"]]
+        ax_pcie.plot(t_s, tx_GiB_s, label="pcie_tx_GiB_s")
+        pcie_plotted = True
+    elif "pcie_tx_kbps" in data:
+        tx_GiB_s = [kib_s_to_GiB_s(x) if not _is_nan(x) else float("nan") for x in data["pcie_tx_kbps"]]
+        ax_pcie.plot(t_s, tx_GiB_s, label="pcie_tx_GiB_s")
         pcie_plotted = True
 
-    ax_pcie.set_ylabel("PCIe GB/s")
+    if "pcie_rx_GiB_s" in data:
+        ax_pcie.plot(t_s, data["pcie_rx_GiB_s"], label="pcie_rx_GiB_s")
+        pcie_plotted = True
+    elif "pcie_rx_GB_s" in data:
+        rx_GiB_s = [GB_s_to_GiB_s(x) if not _is_nan(x) else float("nan") for x in data["pcie_rx_GB_s"]]
+        ax_pcie.plot(t_s, rx_GiB_s, label="pcie_rx_GiB_s")
+        pcie_plotted = True
+    elif "pcie_rx_kbps" in data:
+        rx_GiB_s = [kib_s_to_GiB_s(x) if not _is_nan(x) else float("nan") for x in data["pcie_rx_kbps"]]
+        ax_pcie.plot(t_s, rx_GiB_s, label="pcie_rx_GiB_s")
+        pcie_plotted = True
+
+    ax_pcie.set_ylabel("PCIe GiB/s")
     ax_pcie.grid(True, alpha=0.3)
 
     ax_pcie_r = None
@@ -253,14 +293,13 @@ def main():
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         out_fp = open(args.out, mode, buffering=1)
 
+    # Keep the CSV minimal by default: only TX/RX-related metrics with explicit units.
+    # Time is relative milliseconds since start (t_ms) to avoid absolute timestamps.
     header = (
-        "ts_unix_ms,"
-        "pcie_tx_kbps,pcie_rx_kbps,"
+        "t_ms,"
+        "pcie_tx_GiB_s,pcie_rx_GiB_s,"
         "pcie_tx_util_pct,pcie_rx_util_pct,"
-        "pcie_tx_peak_util_pct,pcie_rx_peak_util_pct,"
-        "pcie_gen,pcie_width,pcie_max_gen,pcie_max_width,"
-        "pcie_replay_cnt,"
-        "util_gpu_pct,util_mem_pct,sm_clock_mhz,mem_clock_mhz,power_w"
+        "pcie_tx_peak_util_pct,pcie_rx_peak_util_pct"
     )
 
     if out_fp is not sys.stdout:
@@ -271,11 +310,32 @@ def main():
     else:
         out_fp.write(header + "\n")
 
+    # Print one-time link capability info (TX/RX upper bound).
+    curr_gen = safe_call(lambda: get_curr_gen(handle), -1) if get_curr_gen else -1
+    curr_wid = safe_call(lambda: get_curr_wid(handle), -1) if get_curr_wid else -1
+    max_gen = safe_call(lambda: get_max_gen(handle), -1) if get_max_gen else -1
+    max_wid = safe_call(lambda: get_max_wid(handle), -1) if get_max_wid else -1
+
+    link_cur_GiB_s = GB_s_to_GiB_s(pcie_per_lane_GB_s(curr_gen) * (curr_wid if curr_wid and curr_wid > 0 else 0))
+    link_max_GiB_s = GB_s_to_GiB_s(pcie_per_lane_GB_s(max_gen) * (max_wid if max_wid and max_wid > 0 else 0))
+    link_ref_GiB_s = link_max_GiB_s if link_max_GiB_s > 0 else link_cur_GiB_s
+
     print(f"[logger] GPU {args.gpu}: {name}", file=sys.stderr)
     print(f"[logger] interval_ms={args.interval_ms} out={args.out}", file=sys.stderr)
+    if link_ref_GiB_s > 0:
+        print(
+            f"[pcie] TX/RX upper bound (per direction): "
+            f"max gen{max_gen}x{max_wid}≈{link_max_GiB_s:.2f}GiB/s, "
+            f"current gen{curr_gen}x{curr_wid}≈{link_cur_GiB_s:.2f}GiB/s; "
+            f"NVML unit≈KiB/s (converted to GiB/s)",
+            file=sys.stderr,
+        )
+    else:
+        print("[pcie] link info unavailable; logging raw NVML KiB/s only", file=sys.stderr)
 
     interval_s = args.interval_ms / 1000.0
     next_t = time.time()
+    t0 = time.monotonic()
 
     tx_peak_pct = 0.0
     rx_peak_pct = 0.0
@@ -287,70 +347,49 @@ def main():
                 time.sleep(min(0.05, next_t - now))
                 continue
 
-            ts_ms = int(time.time() * 1000)
+            t_ms = int((time.monotonic() - t0) * 1000.0)
 
-            # PCIe link info (current + max)
-            curr_gen = safe_call(lambda: get_curr_gen(handle), -1) if get_curr_gen else -1
-            curr_wid = safe_call(lambda: get_curr_wid(handle), -1) if get_curr_wid else -1
-            max_gen = safe_call(lambda: get_max_gen(handle), -1) if get_max_gen else -1
-            max_wid = safe_call(lambda: get_max_wid(handle), -1) if get_max_wid else -1
+            pcie_tx_kib_s = safe_call(
+                lambda: pynvml.nvmlDeviceGetPcieThroughput(handle, pynvml.NVML_PCIE_UTIL_TX_BYTES), -1
+            )
+            pcie_rx_kib_s = safe_call(
+                lambda: pynvml.nvmlDeviceGetPcieThroughput(handle, pynvml.NVML_PCIE_UTIL_RX_BYTES), -1
+            )
 
-            link_gbps = pcie_per_lane_gbps(curr_gen) * (curr_wid if curr_wid > 0 else 0)
-            # Avoid divide by zero; if we can't read link state, leave util as -1
-            link_gbps = link_gbps if link_gbps > 0 else 0.0
+            tx_GiB_s = kib_s_to_GiB_s(pcie_tx_kib_s) if pcie_tx_kib_s is not None and pcie_tx_kib_s >= 0 else -1.0
+            rx_GiB_s = kib_s_to_GiB_s(pcie_rx_kib_s) if pcie_rx_kib_s is not None and pcie_rx_kib_s >= 0 else -1.0
 
-            util = safe_call(lambda: pynvml.nvmlDeviceGetUtilizationRates(handle))
-            util_gpu = util.gpu if util else -1
-            util_mem = util.memory if util else -1
-
-            sm_clock = safe_call(lambda: pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_SM), -1)
-            mem_clock = safe_call(lambda: pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM), -1)
-            power_mw = safe_call(lambda: pynvml.nvmlDeviceGetPowerUsage(handle), -1)
-            power_w = power_mw / 1000.0 if power_mw is not None and power_mw >= 0 else -1
-
-            pcie_tx = safe_call(lambda: pynvml.nvmlDeviceGetPcieThroughput(
-                handle, pynvml.NVML_PCIE_UTIL_TX_BYTES), -1)
-            pcie_rx = safe_call(lambda: pynvml.nvmlDeviceGetPcieThroughput(
-                handle, pynvml.NVML_PCIE_UTIL_RX_BYTES), -1)
-
-            tx_gbps = kbps_to_gbps(pcie_tx) if pcie_tx is not None and pcie_tx >= 0 else -1.0
-            rx_gbps = kbps_to_gbps(pcie_rx) if pcie_rx is not None and pcie_rx >= 0 else -1.0
-
-            tx_pct = (100.0 * tx_gbps / link_gbps) if (link_gbps > 0 and tx_gbps >= 0) else -1.0
-            rx_pct = (100.0 * rx_gbps / link_gbps) if (link_gbps > 0 and rx_gbps >= 0) else -1.0
+            tx_pct = (100.0 * tx_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and tx_GiB_s >= 0) else -1.0
+            rx_pct = (100.0 * rx_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and rx_GiB_s >= 0) else -1.0
 
             if tx_pct >= 0:
                 tx_peak_pct = max(tx_peak_pct, tx_pct)
             if rx_pct >= 0:
                 rx_peak_pct = max(rx_peak_pct, rx_pct)
 
-            replay_cnt = safe_call(lambda: get_replay(handle), -1) if get_replay else -1
-
             out_fp.write(
-                f"{ts_ms},"
-                f"{pcie_tx},{pcie_rx},"
+                f"{t_ms},"
+                f"{tx_GiB_s:.6f},{rx_GiB_s:.6f},"
                 f"{tx_pct:.3f},{rx_pct:.3f},"
-                f"{tx_peak_pct:.3f},{rx_peak_pct:.3f},"
-                f"{curr_gen},{curr_wid},{max_gen},{max_wid},"
-                f"{replay_cnt},"
-                f"{util_gpu},{util_mem},{sm_clock},{mem_clock},{power_w}\n"
+                f"{tx_peak_pct:.3f},{rx_peak_pct:.3f}\n"
             )
-            out_fp.flush()
+            try:
+                out_fp.flush()
+            except BrokenPipeError:
+                # Common when piping to tools like `head`; exit cleanly.
+                break
 
             if args.live:
-                # A compact, grep-friendly status line
-                # Example: [pcie] tx=1.23GB/s(3.8%,peak 12.1%) rx=...
-                if link_gbps > 0:
+                if link_ref_GiB_s > 0:
                     print(
-                        f"[pcie] gen{curr_gen}x{curr_wid} link≈{link_gbps:.2f}GB/s "
-                        f"tx={tx_gbps:.3f}GB/s({tx_pct:.2f}%,peak {tx_peak_pct:.2f}%) "
-                        f"rx={rx_gbps:.3f}GB/s({rx_pct:.2f}%,peak {rx_peak_pct:.2f}%) "
-                        f"replay={replay_cnt} util_gpu={util_gpu}% util_mem={util_mem}% power={power_w:.1f}W",
+                        f"[pcie] t={t_ms / 1000.0:.3f}s "
+                        f"tx={tx_GiB_s:.3f}GiB/s ({tx_pct:.2f}% of max, peak {tx_peak_pct:.2f}%) "
+                        f"rx={rx_GiB_s:.3f}GiB/s ({rx_pct:.2f}% of max, peak {rx_peak_pct:.2f}%)",
                         file=sys.stderr,
                     )
                 else:
                     print(
-                        f"[pcie] tx={pcie_tx}KB/s rx={pcie_rx}KB/s (link unknown) replay={replay_cnt}",
+                        f"[pcie] t={t_ms / 1000.0:.3f}s tx={tx_GiB_s:.6f}GiB/s rx={rx_GiB_s:.6f}GiB/s (link unknown)",
                         file=sys.stderr,
                     )
 
