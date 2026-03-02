@@ -32,6 +32,23 @@ def run_cmd(cmd):
     return p.returncode, p.stdout
 
 
+def append_optional_client_tail(cmd, args):
+    # cpu_client optional tail order:
+    # [sample] [max_samples] [ts_ms] [ts_out] [write_ack]
+    # When write_ack is present, keep ts placeholders so parsing stays aligned.
+    need_ts_placeholders = (
+        args.ts_ms != 0
+        or args.ts_out != ""
+        or args.write_ack is not None
+    )
+    if need_ts_placeholders:
+        cmd.append(str(args.ts_ms))
+        cmd.append(args.ts_out if args.ts_out != "" else "-")
+    if args.write_ack is not None:
+        cmd.append(str(args.write_ack))
+    return cmd
+
+
 def parse_output(text: str):
     res = {
         "elapsed_s": None,
@@ -88,8 +105,15 @@ def main():
     ap.add_argument("--warmup_sleep_ms", type=int, default=0, help="sleep between warmup and measurement")
     ap.add_argument("--sample", type=int, default=1)
     ap.add_argument("--max_samples", type=int, default=0)
+    ap.add_argument("--ts_ms", type=int, default=0, help="optional cpu_client ts_ms arg")
+    ap.add_argument("--ts_out", default="", help="optional cpu_client ts_out arg")
+    ap.add_argument("--write_ack", type=int, choices=[0, 1], default=None, help="optional cpu_client write_ack arg")
+    ap.add_argument("--write_ack_batch", type=int, default=None, help="deprecated; ignored (client now enforces per-write ACK)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+
+    if args.write_ack_batch is not None:
+        print("[warn] --write_ack_batch is deprecated and ignored; per-write ACK is always used")
 
     msg_sizes = parse_msg_sizes(args.msg_sizes)
     if not msg_sizes:
@@ -189,8 +213,13 @@ def main():
                         str(args.sample),
                         str(args.max_samples),
                     ]
+                    append_optional_client_tail(warm_cmd, args)
                     print(f"Warmup ({wi + 1}/{args.warmup_runs}) msg={msg}:", " ".join(warm_cmd))
-                    run_cmd(warm_cmd)
+                    wret, wout = run_cmd(warm_cmd)
+                    if wret != 0:
+                        print(f"[warmup-error] msg={msg} ret={wret}")
+                        if wout:
+                            print(wout, end="" if wout.endswith("\n") else "\n")
                 if args.warmup_sleep_ms > 0:
                     time.sleep(args.warmup_sleep_ms / 1000.0)
             cmd = [
@@ -211,8 +240,13 @@ def main():
                 str(args.sample),
                 str(args.max_samples),
             ]
+            append_optional_client_tail(cmd, args)
             print("Running:", " ".join(cmd))
             ret, out = run_cmd(cmd)
+            if ret != 0:
+                print(f"[run-error] msg={msg} ret={ret}")
+                if out:
+                    print(out, end="" if out.endswith("\n") else "\n")
             parsed = parse_output(out)
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             w.writerow([

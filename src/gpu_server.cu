@@ -21,17 +21,61 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <deque>
 #include <string>
+#include <thread>
+#include <vector>
+
+#define CUDA_CHECK(cmd)                                                                           \
+    do                                                                                            \
+    {                                                                                             \
+        cudaError_t e = (cmd);                                                                    \
+        if (e != cudaSuccess)                                                                     \
+        {                                                                                         \
+            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(e)); \
+            exit(1);                                                                              \
+        }                                                                                         \
+    } while (0)
 
 static void die(const char *m)
 {
     perror(m);
     exit(1);
+}
+
+static void maybe_flush_gpudirect_writes()
+{
+    static bool supported = true;
+    if (!supported)
+        return;
+
+#if !defined(CUDART_VERSION) || (CUDART_VERSION < 11030)
+    supported = false;
+    fprintf(stderr, "[server] cudaDeviceFlushGPUDirectRDMAWrites not available (CUDART_VERSION too old); ACK may not imply GPU visibility\n");
+    return;
+#else
+    cudaError_t e = cudaDeviceFlushGPUDirectRDMAWrites(cudaFlushGPUDirectRDMAWritesTargetCurrentDevice,
+                                                       cudaFlushGPUDirectRDMAWritesToOwner);
+    if (e == cudaSuccess)
+        return;
+    if (e == cudaErrorNotSupported || e == cudaErrorInvalidValue)
+    {
+        // Clear the sticky error and disable subsequent flush attempts.
+        cudaGetLastError();
+        supported = false;
+        fprintf(stderr, "[server] cudaDeviceFlushGPUDirectRDMAWrites not supported; ACK may not imply GPU visibility\n");
+        return;
+    }
+    fprintf(stderr, "CUDA flush error: %s\n", cudaGetErrorString(e));
+    exit(1);
+#endif
 }
 
 static void xs(int s, const void *b, size_t l)
@@ -82,6 +126,14 @@ struct ConnInfo
     uint8_t port;
     uint8_t gid_idx;
     uint16_t pad;
+};
+
+struct ClientParams
+{
+    uint8_t op;        // 0=read, 1=write
+    uint8_t write_ack; // 0/1
+    uint16_t pad;
+    uint32_t qd;
 };
 
 static void query_gid(ibv_context *ctx, uint8_t port, int gid_idx, uint8_t out[16])
@@ -229,8 +281,8 @@ int main(int argc, char **argv)
         qia.qp_type = IBV_QPT_RC;
         qia.send_cq = cq;
         qia.recv_cq = cq;
-        qia.cap.max_send_wr = 4096;
-        qia.cap.max_recv_wr = 1;
+        qia.cap.max_send_wr = 8192;
+        qia.cap.max_recv_wr = 8192;
         qia.cap.max_send_sge = 1;
         qia.cap.max_recv_sge = 1;
         ibv_qp *qp = ibv_create_qp(pd, &qia);
@@ -257,9 +309,175 @@ int main(int argc, char **argv)
         } rinfo{mr->rkey, (uint64_t)(uintptr_t)d_buf, (uint64_t)mr_bytes};
         xs(s, &rinfo, sizeof(rinfo));
 
-        // wait for client "done"
-        char done{};
-        xr(s, &done, 1);
+        ClientParams params{};
+        xr(s, &params, sizeof(params));
+        bool need_ack = (params.op == 1 && params.write_ack);
+        uint32_t qd = params.qd;
+        if (need_ack)
+        {
+            fprintf(stderr, "[server] write_ack enabled: qd=%u (payload uses WRITE_WITH_IMM)\n", qd);
+        }
+
+        // signal ready so client can start issuing work
+        char ready = 1;
+        xs(s, &ready, 1);
+
+        if (!need_ack)
+        {
+            // wait for client "done"
+            char done{};
+            xr(s, &done, 1);
+            close(s);
+            ibv_destroy_qp(qp);
+            continue;
+        }
+
+        // Setup receive buffers for WRITE_WITH_IMM notifications.
+        // In the new protocol, every payload WRITE_WITH_IMM generates one RECV-side CQE.
+        // We keep recv_depth credits posted to avoid RNR when client pipelines writes.
+        uint32_t recv_depth = qd > 0 ? qd : 1;
+        if (recv_depth > 8192)
+            recv_depth = 8192;
+        std::vector<uint32_t> recv_bufs(recv_depth, 0);
+        ibv_mr *recv_mr = ibv_reg_mr(pd, recv_bufs.data(), recv_bufs.size() * sizeof(uint32_t),
+                                     IBV_ACCESS_LOCAL_WRITE);
+        if (!recv_mr)
+            die("ibv_reg_mr (recv)");
+        std::vector<ibv_sge> recv_sges(recv_depth);
+        std::vector<ibv_recv_wr> recv_wrs(recv_depth);
+        for (uint32_t i = 0; i < recv_depth; i++)
+        {
+            recv_sges[i].addr = (uintptr_t)&recv_bufs[i];
+            recv_sges[i].length = sizeof(uint32_t);
+            recv_sges[i].lkey = recv_mr->lkey;
+            recv_wrs[i] = {};
+            recv_wrs[i].wr_id = i;
+            recv_wrs[i].sg_list = &recv_sges[i];
+            recv_wrs[i].num_sge = 1;
+            recv_wrs[i].next = (i + 1 < recv_depth) ? &recv_wrs[i + 1] : nullptr;
+        }
+        ibv_recv_wr *bad_recv = nullptr;
+        if (ibv_post_recv(qp, &recv_wrs[0], &bad_recv))
+            die("ibv_post_recv");
+
+        // ACK send buffer
+        uint32_t *ack_buf = nullptr;
+        if (posix_memalign((void **)&ack_buf, 64, sizeof(uint32_t)))
+            die("posix_memalign");
+        ibv_mr *ack_mr = ibv_reg_mr(pd, ack_buf, sizeof(uint32_t), IBV_ACCESS_LOCAL_WRITE);
+        if (!ack_mr)
+            die("ibv_reg_mr (ack)");
+
+        ibv_sge ack_sge{};
+        ibv_send_wr ack_wr{};
+        ack_sge.addr = (uintptr_t)ack_buf;
+        ack_sge.length = sizeof(uint32_t);
+        ack_sge.lkey = ack_mr->lkey;
+        ack_wr.sg_list = &ack_sge;
+        ack_wr.num_sge = 1;
+        ack_wr.opcode = IBV_WR_SEND;
+        ack_wr.send_flags = IBV_SEND_SIGNALED;
+
+        auto post_ack = [&](uint32_t tag) {
+            // This is the visibility guarantee point:
+            // only ACK after we force GPUDirect writes to become visible to the GPU.
+            // If flush is unsupported, maybe_flush_gpudirect_writes() degrades once
+            // and subsequent ACKs become best-effort (with warning already printed).
+            maybe_flush_gpudirect_writes();
+            *ack_buf = tag;
+            ibv_send_wr *bad = nullptr;
+            if (ibv_post_send(qp, &ack_wr, &bad))
+                die("ibv_post_send (ack)");
+        };
+
+        // make TCP non-blocking so we can poll for "done"
+        int flags = fcntl(s, F_GETFL, 0);
+        if (flags >= 0)
+            fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+        bool done = false;
+        bool ack_inflight = false;
+        std::deque<uint32_t> pending;
+
+        auto check_done = [&]() {
+            if (done)
+                return;
+            char c = 0;
+            ssize_t r = recv(s, &c, 1, MSG_DONTWAIT);
+            if (r == 1 || r == 0)
+                done = true;
+            else if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+                die("recv");
+        };
+
+        while (true)
+        {
+            ibv_wc wc{};
+            int n = ibv_poll_cq(cq, 1, &wc);
+            if (n < 0)
+                die("poll_cq");
+            if (n == 0)
+            {
+                check_done();
+                if (done && !ack_inflight && pending.empty())
+                    break;
+                // Busy-poll for lowest ACK latency. This intentionally trades CPU usage
+                // for reduced CQ idle-to-service delay.
+                continue;
+            }
+            if (wc.status != IBV_WC_SUCCESS)
+            {
+                fprintf(stderr, "WC error: status=%d (%s), opcode=%d wr_id=%lu qpn=%u vend=0x%x\n",
+                        wc.status, ibv_wc_status_str((ibv_wc_status)wc.status),
+                        wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
+                break;
+            }
+            if (wc.opcode == IBV_WC_RECV || wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM)
+            {
+                uint32_t tag = 0;
+                if (wc.wc_flags & IBV_WC_WITH_IMM)
+                    tag = ntohl(wc.imm_data);
+                else
+                    tag = recv_bufs[wc.wr_id];
+                // Repost immediately so RQ credits remain stable under sustained traffic.
+                recv_wrs[wc.wr_id].next = nullptr;
+                if (ibv_post_recv(qp, &recv_wrs[wc.wr_id], &bad_recv))
+                    die("ibv_post_recv (repost)");
+
+                if (!ack_inflight)
+                {
+                    post_ack(tag);
+                    ack_inflight = true;
+                }
+                else
+                {
+                    pending.push_back(tag);
+                }
+            }
+            else if (wc.opcode == IBV_WC_SEND)
+            {
+                ack_inflight = false;
+                if (!pending.empty())
+                {
+                    uint32_t tag = pending.front();
+                    pending.pop_front();
+                    post_ack(tag);
+                    ack_inflight = true;
+                }
+            }
+            else if (wc.opcode != IBV_WC_SEND)
+            {
+                fprintf(stderr, "[server] unexpected WC opcode=%d wr_id=%lu\n",
+                        wc.opcode, wc.wr_id);
+            }
+            check_done();
+            if (done && !ack_inflight && pending.empty())
+                break;
+        }
+
+        ibv_dereg_mr(recv_mr);
+        ibv_dereg_mr(ack_mr);
+        free(ack_buf);
         close(s);
         ibv_destroy_qp(qp);
     }

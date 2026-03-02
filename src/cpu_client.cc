@@ -4,7 +4,7 @@
 //      -I/usr/include/infiniband -L/usr/lib/x86_64-linux-gnu -libverbs -lpthread
 //
 // Usage:
-//   ./cpu_client <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=]
+//   ./cpu_client <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=] [write_ack=1]
 // Example:
 //   ./cpu_client 192.168.1.10 18515 mlx5_1 100000 65536 read 1 3 64 1G random 256 1024
 //
@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 static void die(const char *m)
@@ -158,7 +159,7 @@ int main(int argc, char **argv)
     if (argc < 10)
     {
         fprintf(stderr,
-                "Usage: %s <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=]\n",
+                "Usage: %s <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=] [write_ack=1]\n",
                 argv[0]);
         return 1;
     }
@@ -196,6 +197,19 @@ int main(int argc, char **argv)
     //  - ts_out: CSV output path; "-" or empty means stdout.
     int ts_ms = (argc > argi) ? atoi(argv[argi++]) : 0;
     const char *ts_out = (argc > argi) ? argv[argi++] : nullptr;
+    int write_ack = (argc > argi) ? atoi(argv[argi++]) : 1;
+    if (argc > argi)
+    {
+        int legacy_write_ack_batch = atoi(argv[argi++]);
+        if (legacy_write_ack_batch != 1)
+        {
+            fprintf(stderr, "[client] write_ack_batch is deprecated and ignored; per-write ACK is always used\n");
+        }
+    }
+    if (do_read)
+    {
+        write_ack = 0;
+    }
 
     // TCP control
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -243,7 +257,7 @@ int main(int argc, char **argv)
     qia.send_cq = cq;
     qia.recv_cq = cq;
     qia.cap.max_send_wr = 8192;
-    qia.cap.max_recv_wr = 1;
+    qia.cap.max_recv_wr = (qd > 1) ? qd : 1;
     qia.cap.max_send_sge = 1;
     qia.cap.max_recv_sge = 1;
     ibv_qp *qp = ibv_create_qp(pd, &qia);
@@ -286,10 +300,10 @@ int main(int argc, char **argv)
     if (qd < 1)
         qd = 1;
 
-    fprintf(stderr, "[client] op=%s msg=%zu qd=%d span=%zu align=%zu mtu=%d sample=%d max_samples=%zu ts_ms=%d ts_out=%s\n",
+    fprintf(stderr, "[client] op=%s msg=%zu qd=%d span=%zu align=%zu mtu=%d sample=%d max_samples=%zu ts_ms=%d ts_out=%s write_ack=%d\n",
             do_read ? "READ" : "WRITE", msg, qd, span, align, (mtu == IBV_MTU_4096 ? 4096 : mtu == IBV_MTU_2048 ? 2048
                                                                                                                 : 1024),
-            sample, max_samples, ts_ms, ts_out ? ts_out : "-");
+            sample, max_samples, ts_ms, ts_out ? ts_out : "-", write_ack);
 
     // Local host buffer (we can reuse one buffer for all WRs)
     void *buf = nullptr;
@@ -300,6 +314,21 @@ int main(int argc, char **argv)
     ibv_mr *lmr = ibv_reg_mr(pd, buf, msg, lflags);
     if (!lmr)
         die("ibv_reg_mr (host)");
+
+    // Exchange client params (so server knows whether to enable WRITE ack path).
+    struct ClientParams
+    {
+        uint8_t op;        // 0=read, 1=write
+        uint8_t write_ack; // 0/1
+        uint16_t pad;
+        uint32_t qd;
+    } params{};
+    params.op = do_read ? 0 : 1;
+    params.write_ack = write_ack ? 1 : 0;
+    params.qd = (uint32_t)qd;
+    xs(s, &params, sizeof(params));
+    char ready = 0;
+    xr(s, &ready, 1);
 
     // Pre-build QD descriptors (we'll update remote_addr each post)
     std::vector<ibv_sge> sges(qd);
@@ -449,62 +478,226 @@ int main(int argc, char **argv)
         last_completed = total_completed;
     };
 
-    while (total_posted < iters)
+    if (do_read || !write_ack)
     {
-        int burst = (int)std::min<uint64_t>(qd, iters - total_posted);
-        for (int i = 0; i < burst; i++)
+        while (total_posted < iters)
         {
-            off = next_off(std::string(pattern) == "random");
-            wrs[i].wr.rdma.remote_addr = rinfo.addr + off;
-            wrs[i].next = (i + 1 < burst) ? &wrs[i + 1] : nullptr;
-            // Record start time for this WR (wr_id == i).
-            start_ns[i] = now_ns();
-        }
-        ibv_send_wr *bad = nullptr;
-        if (ibv_post_send(qp, &wrs[0], &bad))
-        {
-            perror("ibv_post_send");
-            return 3;
-        }
-        total_posted += burst;
-
-        // poll 'burst' completions
-        int comp = 0;
-        while (comp < burst)
-        {
-            ibv_wc wc{};
-            int n = ibv_poll_cq(cq, 1, &wc);
-            if (n < 0)
-                die("poll_cq");
-            if (n == 0)
-                continue;
-            if (wc.status != IBV_WC_SUCCESS)
+            int burst = (int)std::min<uint64_t>(qd, iters - total_posted);
+            for (int i = 0; i < burst; i++)
             {
-                fprintf(stderr, "WC error: status=%d (%s), opcode=%d wr_id=%lu qpn=%u vend=0x%x\n",
-                        wc.status, ibv_wc_status_str((ibv_wc_status)wc.status),
-                        wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
-                return 4;
+                off = next_off(std::string(pattern) == "random");
+                wrs[i].wr.rdma.remote_addr = rinfo.addr + off;
+                wrs[i].next = (i + 1 < burst) ? &wrs[i + 1] : nullptr;
+                // Record start time for this WR (wr_id == i).
+                start_ns[i] = now_ns();
             }
-            // Completion timestamp; latency is end-start for this wr_id.
-            uint64_t end_ns = now_ns();
-            uint64_t sid = wc.wr_id;
-            if (sid < start_ns.size())
+            ibv_send_wr *bad = nullptr;
+            int post_rc = ibv_post_send(qp, &wrs[0], &bad);
+            if (post_rc)
             {
-                double dur_us = (double)(end_ns - start_ns[sid]) / 1000.0;
-                // Sample every N-th completion to reduce overhead.
-                if ((total_completed % (uint64_t)sample) == 0)
+                fprintf(stderr, "ibv_post_send failed rc=%d (%s) bad_wr_id=%lu bad_opcode=%d\n",
+                        post_rc, strerror(post_rc),
+                        bad ? (unsigned long)bad->wr_id : 0UL,
+                        bad ? (int)bad->opcode : -1);
+                return 3;
+            }
+            total_posted += burst;
+
+            // poll 'burst' completions
+            int comp = 0;
+            while (comp < burst)
+            {
+                ibv_wc wc{};
+                int n = ibv_poll_cq(cq, 1, &wc);
+                if (n < 0)
+                    die("poll_cq");
+                if (n == 0)
+                    continue;
+                if (wc.status != IBV_WC_SUCCESS)
                 {
-                    if (max_samples == 0 || lat_us.size() < max_samples)
-                        lat_us.push_back(dur_us);
+                    fprintf(stderr, "WC error: status=%d (%s), opcode=%d wr_id=%lu qpn=%u vend=0x%x\n",
+                            wc.status, ibv_wc_status_str((ibv_wc_status)wc.status),
+                            wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
+                    return 4;
+                }
+                // Completion timestamp; latency is end-start for this wr_id.
+                uint64_t end_ns = now_ns();
+                uint64_t sid = wc.wr_id;
+                if (sid < start_ns.size())
+                {
+                    double dur_us = (double)(end_ns - start_ns[sid]) / 1000.0;
+                    // Sample every N-th completion to reduce overhead.
+                    if ((total_completed % (uint64_t)sample) == 0)
+                    {
+                        if (max_samples == 0 || lat_us.size() < max_samples)
+                            lat_us.push_back(dur_us);
+                        if (ts_ms > 0)
+                            lat_us_win.push_back(dur_us);
+                    }
+                }
+                comp++;
+                total_completed++;
+                // Emit time-series line when window ends.
+                if (ts_ms > 0)
+                    flush_window(false);
+            }
+        }
+    }
+    else
+    {
+        // WRITE with remote GPU-visibility ACK:
+        //   - Each payload is sent as RDMA_WRITE_WITH_IMM(tag) directly to target offset.
+        //   - Server receives RECV_RDMA_WITH_IMM, flushes GPUDirect writes to GPU visibility,
+        //     and then SENDs a 4-byte ACK(tag) back.
+        //   - Client treats ACK(tag) as the completion point for that payload's latency.
+        //
+        // Note:
+        //   - This keeps one-step payload+notify semantics (no separate doorbell write).
+        //   - ACK policy is strict per-write confirmation: at most one payload in flight.
+        //     That gives the clearest "write became GPU-visible" completion semantics.
+        const int max_inflight = 1;
+
+        // Pre-post enough RECVs so server ACK SENDs can arrive without RNR.
+        // Each RECV buffer stores one 4-byte ACK tag from server.
+        std::vector<uint32_t> ack_tags(max_inflight, 0);
+        ibv_mr *ack_mr = ibv_reg_mr(pd, ack_tags.data(),
+                                    ack_tags.size() * sizeof(uint32_t),
+                                    IBV_ACCESS_LOCAL_WRITE);
+        if (!ack_mr)
+            die("ibv_reg_mr (ack recv)");
+
+        std::vector<ibv_sge> ack_sges(max_inflight);
+        std::vector<ibv_recv_wr> ack_wrs(max_inflight);
+        for (int i = 0; i < max_inflight; i++)
+        {
+            ack_sges[i] = {};
+            ack_sges[i].addr = (uintptr_t)&ack_tags[i];
+            ack_sges[i].length = sizeof(uint32_t);
+            ack_sges[i].lkey = ack_mr->lkey;
+
+            ack_wrs[i] = {};
+            ack_wrs[i].wr_id = (uint64_t)i;
+            ack_wrs[i].sg_list = &ack_sges[i];
+            ack_wrs[i].num_sge = 1;
+            ack_wrs[i].next = (i + 1 < max_inflight) ? &ack_wrs[i + 1] : nullptr;
+        }
+        ibv_recv_wr *bad_recv = nullptr;
+        if (ibv_post_recv(qp, &ack_wrs[0], &bad_recv))
+            die("ibv_post_recv (ack)");
+
+        for (int i = 0; i < qd; i++)
+        {
+            wrs[i].opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+            wrs[i].send_flags = 0;
+            wrs[i].wr.rdma.rkey = rinfo.rkey;
+        }
+
+        uint32_t tag_seq = 1;
+        while (total_posted < iters)
+        {
+            int burst = (int)std::min<uint64_t>((uint64_t)max_inflight, iters - total_posted);
+            std::unordered_map<uint32_t, int> tag_to_index;
+            tag_to_index.reserve((size_t)burst * 2);
+
+            for (int i = 0; i < burst; i++)
+            {
+                off = next_off(std::string(pattern) == "random");
+                start_ns[i] = now_ns();
+                wrs[i].wr.rdma.remote_addr = rinfo.addr + off;
+                wrs[i].next = (i + 1 < burst) ? &wrs[i + 1] : nullptr;
+
+                // Every payload WR carries its own immediate tag.
+                uint32_t tag = tag_seq++;
+                if (tag == 0)
+                    tag = tag_seq++;
+                tag_to_index[tag] = i;
+                wrs[i].imm_data = htonl(tag);
+
+                // Signal the tail WR so we can reclaim unsignaled WQEs.
+                // This keeps SQ usage bounded while avoiding per-WR SEND CQE overhead.
+                wrs[i].send_flags = (i + 1 < burst) ? 0 : IBV_SEND_SIGNALED;
+                wrs[i].wr_id = 0x100000000ULL | (uint64_t)tag;
+            }
+
+            ibv_send_wr *bad = nullptr;
+            int post_rc = ibv_post_send(qp, &wrs[0], &bad);
+            if (post_rc)
+            {
+                fprintf(stderr, "ibv_post_send failed rc=%d (%s) bad_wr_id=%lu bad_opcode=%d\n",
+                        post_rc, strerror(post_rc),
+                        bad ? (unsigned long)bad->wr_id : 0UL,
+                        bad ? (int)bad->opcode : -1);
+                return 3;
+            }
+            total_posted += burst;
+
+            bool got_send = false;
+            std::vector<uint8_t> ack_seen((size_t)burst, 0);
+            int acked = 0;
+            while (!got_send || acked < burst)
+            {
+                ibv_wc wc{};
+                int n = ibv_poll_cq(cq, 1, &wc);
+                if (n < 0)
+                    die("poll_cq");
+                if (n == 0)
+                    continue;
+                if (wc.status != IBV_WC_SUCCESS)
+                {
+                    fprintf(stderr, "WC error: status=%d (%s), opcode=%d wr_id=%lu qpn=%u vend=0x%x\n",
+                            wc.status, ibv_wc_status_str((ibv_wc_status)wc.status),
+                            wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
+                    return 4;
+                }
+                if (wc.opcode == IBV_WC_RECV)
+                {
+                    if (wc.wr_id >= (uint64_t)ack_wrs.size())
+                    {
+                        fprintf(stderr, "[client] invalid ACK wr_id=%lu\n", wc.wr_id);
+                        return 4;
+                    }
+
+                    uint32_t ack_tag = ack_tags[(size_t)wc.wr_id];
+                    auto it = tag_to_index.find(ack_tag);
+                    if (it == tag_to_index.end())
+                    {
+                        fprintf(stderr, "[client] unexpected ACK tag=0x%x\n", ack_tag);
+                        return 4;
+                    }
+                    int idx = it->second;
+                    if (ack_seen[(size_t)idx])
+                    {
+                        fprintf(stderr, "[client] duplicate ACK tag=0x%x\n", ack_tag);
+                        return 4;
+                    }
+                    ack_seen[(size_t)idx] = 1;
+                    acked++;
+
+                    uint64_t end_ns = now_ns();
+                    double dur_us = (double)(end_ns - start_ns[(size_t)idx]) / 1000.0;
+                    if ((total_completed % (uint64_t)sample) == 0)
+                    {
+                        if (max_samples == 0 || lat_us.size() < max_samples)
+                            lat_us.push_back(dur_us);
+                        if (ts_ms > 0)
+                            lat_us_win.push_back(dur_us);
+                    }
+                    total_completed++;
                     if (ts_ms > 0)
-                        lat_us_win.push_back(dur_us);
+                        flush_window(false);
+
+                    // Repost this receive slot immediately so ACK credits stay stable.
+                    ack_wrs[(size_t)wc.wr_id].next = nullptr;
+                    if (ibv_post_recv(qp, &ack_wrs[(size_t)wc.wr_id], &bad_recv))
+                        die("ibv_post_recv (ack repost)");
+                }
+                else if (wc.opcode == IBV_WC_RDMA_WRITE || wc.opcode == IBV_WC_SEND)
+                {
+                    // For RDMA_WRITE_WITH_IMM, providers typically report local SQ completion
+                    // as IBV_WC_RDMA_WRITE (not IBV_WC_SEND). Accept both for portability.
+                    got_send = true;
                 }
             }
-            comp++;
-            total_completed++;
-            // Emit time-series line when window ends.
-            if (ts_ms > 0)
-                flush_window(false);
         }
     }
 
