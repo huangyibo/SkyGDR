@@ -294,9 +294,9 @@ def main():
         out_fp = open(args.out, mode, buffering=1)
 
     # Keep the CSV minimal by default: only TX/RX-related metrics with explicit units.
-    # Time is relative milliseconds since start (t_ms) to avoid absolute timestamps.
+    # Record both unix time and relative time so cross-process correlation stays robust.
     header = (
-        "t_ms,"
+        "ts_unix_ms,t_ms,"
         "pcie_tx_GiB_s,pcie_rx_GiB_s,"
         "pcie_tx_util_pct,pcie_rx_util_pct,"
         "pcie_tx_peak_util_pct,pcie_rx_peak_util_pct"
@@ -347,6 +347,7 @@ def main():
                 time.sleep(min(0.05, next_t - now))
                 continue
 
+            ts_unix_ms = int(time.time() * 1000.0)
             t_ms = int((time.monotonic() - t0) * 1000.0)
 
             pcie_tx_kib_s = safe_call(
@@ -361,6 +362,10 @@ def main():
 
             tx_pct = (100.0 * tx_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and tx_GiB_s >= 0) else -1.0
             rx_pct = (100.0 * rx_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and rx_GiB_s >= 0) else -1.0
+            if tx_pct >= 0:
+                tx_pct = min(tx_pct, 100.0)
+            if rx_pct >= 0:
+                rx_pct = min(rx_pct, 100.0)
 
             if tx_pct >= 0:
                 tx_peak_pct = max(tx_peak_pct, tx_pct)
@@ -368,7 +373,7 @@ def main():
                 rx_peak_pct = max(rx_peak_pct, rx_pct)
 
             out_fp.write(
-                f"{t_ms},"
+                f"{ts_unix_ms},{t_ms},"
                 f"{tx_GiB_s:.6f},{rx_GiB_s:.6f},"
                 f"{tx_pct:.3f},{rx_pct:.3f},"
                 f"{tx_peak_pct:.3f},{rx_peak_pct:.3f}\n"

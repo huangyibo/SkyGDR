@@ -34,18 +34,30 @@ def run_cmd(cmd):
 
 def append_optional_client_tail(cmd, args):
     # cpu_client optional tail order:
-    # [sample] [max_samples] [ts_ms] [ts_out] [write_ack]
+    # [sample] [max_samples] [ts_ms] [ts_out] [write_ack] [read_min_qd] [rd_atomic] [qps]
     # When write_ack is present, keep ts placeholders so parsing stays aligned.
     need_ts_placeholders = (
         args.ts_ms != 0
         or args.ts_out != ""
         or args.write_ack is not None
+        or args.read_min_qd is not None
+        or args.rd_atomic is not None
+        or args.qps != 1
     )
     if need_ts_placeholders:
         cmd.append(str(args.ts_ms))
         cmd.append(args.ts_out if args.ts_out != "" else "-")
     if args.write_ack is not None:
         cmd.append(str(args.write_ack))
+    elif args.read_min_qd is not None or args.rd_atomic is not None or args.qps != 1:
+        # Keep positional alignment for downstream optional args.
+        cmd.append("0" if args.op == "read" else "1")
+    if args.read_min_qd is not None or args.rd_atomic is not None or args.qps != 1:
+        cmd.append(str(args.read_min_qd) if args.read_min_qd is not None else "0")
+    if args.rd_atomic is not None or args.qps != 1:
+        cmd.append(str(args.rd_atomic) if args.rd_atomic is not None else "0")
+    if args.qps != 1:
+        cmd.append(str(args.qps))
     return cmd
 
 
@@ -109,6 +121,9 @@ def main():
     ap.add_argument("--ts_out", default="", help="optional cpu_client ts_out arg")
     ap.add_argument("--write_ack", type=int, choices=[0, 1], default=None, help="optional cpu_client write_ack arg")
     ap.add_argument("--write_ack_batch", type=int, default=None, help="deprecated; ignored (client now enforces per-write ACK)")
+    ap.add_argument("--read_min_qd", type=int, default=None, help="optional cpu_client read_min_qd arg")
+    ap.add_argument("--rd_atomic", type=int, default=None, help="optional cpu_client rd_atomic arg (0/omit=auto)")
+    ap.add_argument("--qps", type=int, default=1, help="optional cpu_client qps arg (default 1)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -143,6 +158,7 @@ def main():
         "Port",
         "GidIdx",
         "Qd",
+        "Qps",
         "Span",
         "Pattern",
         "Align",
@@ -180,6 +196,7 @@ def main():
             str(args.port),
             str(args.gid_idx),
             str(args.qd),
+            str(args.qps),
             str(args.span),
             args.pattern,
             str(args.align),

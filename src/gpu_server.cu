@@ -24,6 +24,7 @@
 #include <fcntl.h>
 
 #include <cerrno>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -134,6 +135,7 @@ struct ClientParams
     uint8_t write_ack; // 0/1
     uint16_t pad;
     uint32_t qd;
+    uint32_t qps;
 };
 
 static void query_gid(ibv_context *ctx, uint8_t port, int gid_idx, uint8_t out[16])
@@ -144,8 +146,10 @@ static void query_gid(ibv_context *ctx, uint8_t port, int gid_idx, uint8_t out[1
     memcpy(out, &g, 16);
 }
 
-static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local_port, int local_gid_idx, ibv_mtu mtu)
+static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local_port, int local_gid_idx, ibv_mtu mtu, int rd_atomic)
 {
+    if (rd_atomic < 1)
+        rd_atomic = 1;
     // INIT
     {
         ibv_qp_attr a{};
@@ -163,7 +167,7 @@ static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local
         a.path_mtu = mtu;
         a.dest_qp_num = remote.qpn;
         a.rq_psn = 0;
-        a.max_dest_rd_atomic = 1;
+        a.max_dest_rd_atomic = (uint8_t)rd_atomic;
         a.min_rnr_timer = 12;
         a.ah_attr.is_global = 1;
         a.ah_attr.port_num = local_port;
@@ -181,7 +185,7 @@ static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local
         a.retry_cnt = 7;
         a.rnr_retry = 7;
         a.sq_psn = 0;
-        a.max_rd_atomic = 1;
+        a.max_rd_atomic = (uint8_t)rd_atomic;
         if (ibv_modify_qp(qp, &a, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC))
             die("qp RTS");
     }
@@ -242,6 +246,15 @@ int main(int argc, char **argv)
     ibv_context *ctx = ibv_open_device(ibdev);
     if (!ctx)
         die("open_device");
+    ibv_device_attr dev_attr{};
+    if (ibv_query_device(ctx, &dev_attr))
+        die("ibv_query_device");
+    int rd_atomic_cap = std::max(1, std::min<int>(dev_attr.max_qp_rd_atom, dev_attr.max_qp_init_rd_atom));
+    // Keep a conservative upper bound to avoid over-driving less stable FW/driver combos.
+    if (rd_atomic_cap > 32)
+        rd_atomic_cap = 32;
+    fprintf(stderr, "[server] rd_atomic_cap=%d\n", rd_atomic_cap);
+
     ibv_pd *pd = ibv_alloc_pd(ctx);
     if (!pd)
         die("alloc_pd");
@@ -299,7 +312,7 @@ int main(int argc, char **argv)
         xr(s, &remote, sizeof(remote));
         xs(s, &local, sizeof(local));
 
-        qp_to_rtr_rts_roce(qp, remote, port, gid_idx, mtu);
+        qp_to_rtr_rts_roce(qp, remote, port, gid_idx, mtu, rd_atomic_cap);
 
         struct
         {
@@ -313,9 +326,39 @@ int main(int argc, char **argv)
         xr(s, &params, sizeof(params));
         bool need_ack = (params.op == 1 && params.write_ack);
         uint32_t qd = params.qd;
+        uint32_t qps = params.qps > 0 ? params.qps : 1;
+        if (need_ack && qps > 1)
+        {
+            fprintf(stderr, "[server] write_ack path currently supports qps=1 only; forcing qps=1\n");
+            qps = 1;
+        }
+        std::vector<ibv_qp *> extra_qps;
+        extra_qps.reserve(qps > 1 ? (size_t)(qps - 1) : 0);
+        for (uint32_t qi = 1; qi < qps; qi++)
+        {
+            ibv_qp *qpx = ibv_create_qp(pd, &qia);
+            if (!qpx)
+                die("create_qp");
+
+            ConnInfo lx{}, rx{};
+            lx.qpn = qpx->qp_num;
+            lx.port = port;
+            lx.gid_idx = (uint8_t)gid_idx;
+            memcpy(lx.gid, local.gid, sizeof(lx.gid));
+
+            // Client sends first for each additional QP too.
+            xr(s, &rx, sizeof(rx));
+            xs(s, &lx, sizeof(lx));
+            qp_to_rtr_rts_roce(qpx, rx, port, gid_idx, mtu, rd_atomic_cap);
+            extra_qps.push_back(qpx);
+        }
         if (need_ack)
         {
-            fprintf(stderr, "[server] write_ack enabled: qd=%u (payload uses WRITE_WITH_IMM)\n", qd);
+            fprintf(stderr, "[server] write_ack enabled: qd=%u qps=%u (payload uses WRITE_WITH_IMM)\n", qd, qps);
+        }
+        else
+        {
+            fprintf(stderr, "[server] one-sided path: qd=%u qps=%u\n", qd, qps);
         }
 
         // signal ready so client can start issuing work
@@ -328,6 +371,8 @@ int main(int argc, char **argv)
             char done{};
             xr(s, &done, 1);
             close(s);
+            for (ibv_qp *qpx : extra_qps)
+                ibv_destroy_qp(qpx);
             ibv_destroy_qp(qp);
             continue;
         }
@@ -479,6 +524,8 @@ int main(int argc, char **argv)
         ibv_dereg_mr(ack_mr);
         free(ack_buf);
         close(s);
+        for (ibv_qp *qpx : extra_qps)
+            ibv_destroy_qp(qpx);
         ibv_destroy_qp(qp);
     }
 

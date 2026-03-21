@@ -4,14 +4,16 @@
 //      -I/usr/include/infiniband -L/usr/lib/x86_64-linux-gnu -libverbs -lpthread
 //
 // Usage:
-//   ./cpu_client <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=] [write_ack=1]
+//   ./cpu_client <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=] [write_ack=1] [read_min_qd=16] [rd_atomic=0(auto)] [qps=1]
 // Example:
 //   ./cpu_client 192.168.1.10 18515 mlx5_1 100000 65536 read 1 3 64 1G random 256 1024
 //
 // Notes:
-//  - With qd>1 we post a burst and poll qd completions in a loop.
+//  - For read/write_no_ack, each QP keeps up to qd WRs in flight (qps controls QP count).
 //  - Random offsets across 'span' (clamped to remote MR) make HBM activity visible.
 //  - Uses ibv_wc_status_str for readable error logs.
+//  - Optional runtime control is enabled via env vars:
+//      SKYGDR_CTRL_PORT, SKYGDR_CTRL_HIGH_SLEEP_US, SKYGDR_CTRL_LOW_SLEEP_US, SKYGDR_CTRL_BIND_IP
 
 #include <infiniband/verbs.h>
 
@@ -19,14 +21,17 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -85,6 +90,230 @@ static inline uint64_t now_ns()
         .count();
 }
 
+enum ControlMode
+{
+    CONTROL_MODE_DISABLED = 0,
+    CONTROL_MODE_HIGH = 1,
+    CONTROL_MODE_LOW1 = 2,
+    CONTROL_MODE_LOW2 = 3,
+    CONTROL_MODE_LOW3 = 4,
+    CONTROL_MODE_LOW4 = 5,
+    CONTROL_MODE_CUSTOM = 6,
+};
+
+struct ClientControlState
+{
+    std::atomic<int> mode{CONTROL_MODE_DISABLED};
+    std::atomic<uint32_t> pace_sleep_us{0};
+    std::atomic<uint32_t> high_sleep_us{0};
+    std::atomic<uint32_t> low1_sleep_us{0};
+    std::atomic<uint32_t> low2_sleep_us{0};
+    std::atomic<uint32_t> low3_sleep_us{0};
+    std::atomic<uint32_t> low4_sleep_us{0};
+    std::atomic<uint64_t> command_count{0};
+    std::atomic<int> stop_requested{0};
+    std::atomic<int> shutdown{0};
+    uint16_t listen_port = 0;
+    std::string bind_ip = "0.0.0.0";
+};
+
+static const char *control_mode_name(int mode)
+{
+    switch (mode)
+    {
+    case CONTROL_MODE_HIGH:
+        return "HIGH";
+    case CONTROL_MODE_LOW1:
+        return "LOW1";
+    case CONTROL_MODE_LOW2:
+        return "LOW2";
+    case CONTROL_MODE_LOW3:
+        return "LOW3";
+    case CONTROL_MODE_LOW4:
+        return "LOW4";
+    case CONTROL_MODE_CUSTOM:
+        return "CUSTOM";
+    default:
+        return "DISABLED";
+    }
+}
+
+static inline void apply_control_mode(ClientControlState &ctrl, int mode, uint32_t sleep_us)
+{
+    ctrl.mode.store(mode, std::memory_order_relaxed);
+    ctrl.pace_sleep_us.store(sleep_us, std::memory_order_relaxed);
+    ctrl.command_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+static std::string trim_ascii(std::string s)
+{
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ' || s.back() == '\t'))
+        s.pop_back();
+    size_t pos = 0;
+    while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t'))
+        pos++;
+    return s.substr(pos);
+}
+
+static void fill_control_response(const ClientControlState &ctrl, const char *prefix, std::string &resp)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "%s mode=%s sleep_us=%u high_sleep_us=%u low1_sleep_us=%u low2_sleep_us=%u low3_sleep_us=%u low4_sleep_us=%u commands=%lu stop=%d\n",
+             prefix,
+             control_mode_name(ctrl.mode.load(std::memory_order_relaxed)),
+             ctrl.pace_sleep_us.load(std::memory_order_relaxed),
+             ctrl.high_sleep_us.load(std::memory_order_relaxed),
+             ctrl.low1_sleep_us.load(std::memory_order_relaxed),
+             ctrl.low2_sleep_us.load(std::memory_order_relaxed),
+             ctrl.low3_sleep_us.load(std::memory_order_relaxed),
+             ctrl.low4_sleep_us.load(std::memory_order_relaxed),
+             (unsigned long)ctrl.command_count.load(std::memory_order_relaxed),
+             ctrl.stop_requested.load(std::memory_order_relaxed));
+    resp.assign(buf);
+}
+
+static void handle_control_command(const std::string &raw_cmd, ClientControlState &ctrl, std::string &resp)
+{
+    std::string cmd = trim_ascii(raw_cmd);
+    if (cmd.empty())
+    {
+        fill_control_response(ctrl, "ERR empty", resp);
+        return;
+    }
+
+    if (cmd == "HIGH")
+    {
+        apply_control_mode(ctrl, CONTROL_MODE_HIGH, ctrl.high_sleep_us.load(std::memory_order_relaxed));
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd == "LOW" || cmd == "LOW1")
+    {
+        apply_control_mode(ctrl, CONTROL_MODE_LOW1, ctrl.low1_sleep_us.load(std::memory_order_relaxed));
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd == "LOW2")
+    {
+        apply_control_mode(ctrl, CONTROL_MODE_LOW2, ctrl.low2_sleep_us.load(std::memory_order_relaxed));
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd == "LOW3")
+    {
+        apply_control_mode(ctrl, CONTROL_MODE_LOW3, ctrl.low3_sleep_us.load(std::memory_order_relaxed));
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd == "LOW4")
+    {
+        apply_control_mode(ctrl, CONTROL_MODE_LOW4, ctrl.low4_sleep_us.load(std::memory_order_relaxed));
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd == "STOP")
+    {
+        ctrl.stop_requested.store(1, std::memory_order_relaxed);
+        ctrl.command_count.fetch_add(1, std::memory_order_relaxed);
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd == "STATUS")
+    {
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+    if (cmd.rfind("SLEEP ", 0) == 0)
+    {
+        unsigned long v = strtoul(cmd.c_str() + 6, nullptr, 10);
+        apply_control_mode(ctrl, CONTROL_MODE_CUSTOM, (uint32_t)v);
+        fill_control_response(ctrl, "OK", resp);
+        return;
+    }
+
+    fill_control_response(ctrl, "ERR unknown_cmd", resp);
+}
+
+static void control_server_loop(ClientControlState *ctrl)
+{
+    int ls = socket(AF_INET, SOCK_STREAM, 0);
+    if (ls < 0)
+    {
+        perror("control socket");
+        return;
+    }
+    int yes = 1;
+    setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    setsockopt(ls, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(ctrl->listen_port);
+    if (ctrl->bind_ip.empty() || ctrl->bind_ip == "0.0.0.0")
+    {
+        addr.sin_addr.s_addr = INADDR_ANY;
+    }
+    else if (inet_pton(AF_INET, ctrl->bind_ip.c_str(), &addr.sin_addr) != 1)
+    {
+        fprintf(stderr, "[client] invalid control bind ip: %s\n", ctrl->bind_ip.c_str());
+        close(ls);
+        return;
+    }
+
+    if (bind(ls, (sockaddr *)&addr, sizeof(addr)) != 0)
+    {
+        perror("control bind");
+        close(ls);
+        return;
+    }
+    if (listen(ls, 4) != 0)
+    {
+        perror("control listen");
+        close(ls);
+        return;
+    }
+
+    fprintf(stderr, "[client] control listening on %s:%u\n", ctrl->bind_ip.c_str(), (unsigned)ctrl->listen_port);
+    while (!ctrl->shutdown.load(std::memory_order_relaxed))
+    {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(ls, &rfds);
+        timeval tv{};
+        tv.tv_sec = 0;
+        tv.tv_usec = 200000;
+        int rc = select(ls + 1, &rfds, nullptr, nullptr, &tv);
+        if (rc < 0)
+        {
+            perror("control select");
+            break;
+        }
+        if (rc == 0)
+            continue;
+
+        int cs = accept(ls, nullptr, nullptr);
+        if (cs < 0)
+            continue;
+
+        char buf[256];
+        ssize_t n = recv(cs, buf, sizeof(buf) - 1, 0);
+        if (n <= 0)
+        {
+            close(cs);
+            continue;
+        }
+        buf[n] = '\0';
+
+        std::string resp;
+        handle_control_command(buf, *ctrl, resp);
+        (void)send(cs, resp.data(), resp.size(), 0);
+        close(cs);
+    }
+
+    close(ls);
+}
+
 struct ConnInfo
 {
     uint32_t qpn;
@@ -102,8 +331,10 @@ static void query_gid(ibv_context *ctx, uint8_t port, int gid_idx, uint8_t out[1
     memcpy(out, &g, 16);
 }
 
-static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local_port, int local_gid_idx, ibv_mtu mtu)
+static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local_port, int local_gid_idx, ibv_mtu mtu, int rd_atomic)
 {
+    if (rd_atomic < 1)
+        rd_atomic = 1;
     // INIT
     {
         ibv_qp_attr a{};
@@ -121,7 +352,7 @@ static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local
         a.path_mtu = mtu;
         a.dest_qp_num = remote.qpn;
         a.rq_psn = 0;
-        a.max_dest_rd_atomic = 1;
+        a.max_dest_rd_atomic = (uint8_t)rd_atomic;
         a.min_rnr_timer = 12;
         a.ah_attr.is_global = 1;
         a.ah_attr.port_num = local_port;
@@ -139,7 +370,7 @@ static void qp_to_rtr_rts_roce(ibv_qp *qp, const ConnInfo &remote, uint8_t local
         a.retry_cnt = 7;
         a.rnr_retry = 7;
         a.sq_psn = 0;
-        a.max_rd_atomic = 1;
+        a.max_rd_atomic = (uint8_t)rd_atomic;
         if (ibv_modify_qp(qp, &a, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC))
             die("RTS");
     }
@@ -159,8 +390,9 @@ int main(int argc, char **argv)
     if (argc < 10)
     {
         fprintf(stderr,
-                "Usage: %s <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=] [write_ack=1]\n",
+                "Usage: %s <server_ip> <tcp_port> <ib_dev> <iters> <msg_bytes> <op:write|read> <port> <gid_idx> [qd=64] [span:{bytes|[0-9]+[KMG]}] [pattern:random|seq] [align=256] [mtu=1024] [sample=1] [max_samples=0] [ts_ms=0] [ts_out=] [write_ack=1] [read_min_qd=16] [rd_atomic=0(auto)] [qps=1]\n",
                 argv[0]);
+        fprintf(stderr, "Env control: SKYGDR_CTRL_PORT / SKYGDR_CTRL_HIGH_SLEEP_US / SKYGDR_CTRL_LOW_SLEEP_US / SKYGDR_CTRL_LOW2_SLEEP_US / SKYGDR_CTRL_LOW3_SLEEP_US / SKYGDR_CTRL_LOW4_SLEEP_US / SKYGDR_CTRL_BIND_IP\n");
         return 1;
     }
     const char *sip = argv[1];
@@ -198,18 +430,119 @@ int main(int argc, char **argv)
     int ts_ms = (argc > argi) ? atoi(argv[argi++]) : 0;
     const char *ts_out = (argc > argi) ? argv[argi++] : nullptr;
     int write_ack = (argc > argi) ? atoi(argv[argi++]) : 1;
-    if (argc > argi)
+    int read_min_qd = 16;
+    if (const char *e = getenv("SKYGDR_READ_MIN_QD"))
     {
-        int legacy_write_ack_batch = atoi(argv[argi++]);
-        if (legacy_write_ack_batch != 1)
+        int v = atoi(e);
+        if (v > 0)
+            read_min_qd = v;
+    }
+    int rd_atomic_arg = 0;
+    if (const char *e = getenv("SKYGDR_RD_ATOMIC"))
+    {
+        int v = atoi(e);
+        if (v > 0)
+            rd_atomic_arg = v;
+    }
+    int qps = 1;
+    if (const char *e = getenv("SKYGDR_QPS"))
+    {
+        int v = atoi(e);
+        if (v > 0)
+            qps = v;
+    }
+    ClientControlState ctrl{};
+    if (const char *e = getenv("SKYGDR_CTRL_PORT"))
+    {
+        int v = atoi(e);
+        if (v > 0 && v <= 65535)
+            ctrl.listen_port = (uint16_t)v;
+    }
+    if (const char *e = getenv("SKYGDR_CTRL_HIGH_SLEEP_US"))
+    {
+        unsigned long v = strtoul(e, nullptr, 10);
+        ctrl.high_sleep_us.store((uint32_t)v, std::memory_order_relaxed);
+    }
+    if (const char *e = getenv("SKYGDR_CTRL_LOW_SLEEP_US"))
+    {
+        unsigned long v = strtoul(e, nullptr, 10);
+        ctrl.low1_sleep_us.store((uint32_t)v, std::memory_order_relaxed);
+    }
+    if (const char *e = getenv("SKYGDR_CTRL_LOW2_SLEEP_US"))
+    {
+        unsigned long v = strtoul(e, nullptr, 10);
+        ctrl.low2_sleep_us.store((uint32_t)v, std::memory_order_relaxed);
+    }
+    if (const char *e = getenv("SKYGDR_CTRL_LOW3_SLEEP_US"))
+    {
+        unsigned long v = strtoul(e, nullptr, 10);
+        ctrl.low3_sleep_us.store((uint32_t)v, std::memory_order_relaxed);
+    }
+    if (const char *e = getenv("SKYGDR_CTRL_LOW4_SLEEP_US"))
+    {
+        unsigned long v = strtoul(e, nullptr, 10);
+        ctrl.low4_sleep_us.store((uint32_t)v, std::memory_order_relaxed);
+    }
+    if (const char *e = getenv("SKYGDR_CTRL_BIND_IP"))
+    {
+        if (*e)
+            ctrl.bind_ip = e;
+    }
+    // Optional tail compatibility:
+    // - New format: [write_ack] [read_min_qd] [rd_atomic] [qps]
+    // - Legacy one-field tail: [write_ack_batch] (deprecated; ignored)
+    //   If there is only one remaining token and it is 0/1, treat it as legacy.
+    int rem = argc - argi;
+    if (rem == 1)
+    {
+        int v = atoi(argv[argi++]);
+        if (v == 0 || v == 1)
         {
-            fprintf(stderr, "[client] write_ack_batch is deprecated and ignored; per-write ACK is always used\n");
+            if (v != 1)
+                fprintf(stderr, "[client] write_ack_batch is deprecated and ignored; per-write ACK is always used\n");
+        }
+        else if (v > 0)
+        {
+            read_min_qd = v;
+        }
+    }
+    else if (rem >= 2)
+    {
+        int v = atoi(argv[argi++]);
+        if (v > 0)
+            read_min_qd = v;
+        v = atoi(argv[argi++]);
+        if (v > 0)
+            rd_atomic_arg = v;
+        if (rem >= 3)
+        {
+            v = atoi(argv[argi++]);
+            if (v > 0)
+                qps = v;
         }
     }
     if (do_read)
     {
         write_ack = 0;
     }
+    if (qps < 1)
+        qps = 1;
+    if (write_ack && qps > 1)
+    {
+        fprintf(stderr, "[client] write_ack path currently supports qps=1 only; forcing qps=1\n");
+        qps = 1;
+    }
+
+    uint32_t low1_sleep_us = ctrl.low1_sleep_us.load(std::memory_order_relaxed);
+    if (ctrl.low2_sleep_us.load(std::memory_order_relaxed) == 0 && low1_sleep_us > 0)
+        ctrl.low2_sleep_us.store((uint32_t)((low1_sleep_us * 5U + 3U) / 4U), std::memory_order_relaxed);
+    if (ctrl.low3_sleep_us.load(std::memory_order_relaxed) == 0 && low1_sleep_us > 0)
+        ctrl.low3_sleep_us.store((uint32_t)((low1_sleep_us * 3U + 1U) / 2U), std::memory_order_relaxed);
+    if (ctrl.low4_sleep_us.load(std::memory_order_relaxed) == 0 && low1_sleep_us > 0)
+        ctrl.low4_sleep_us.store((uint32_t)((low1_sleep_us * 7U + 3U) / 4U), std::memory_order_relaxed);
+
+    ctrl.mode.store(ctrl.listen_port > 0 ? CONTROL_MODE_HIGH : CONTROL_MODE_DISABLED, std::memory_order_relaxed);
+    ctrl.pace_sleep_us.store(ctrl.high_sleep_us.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
     // TCP control
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -248,9 +581,39 @@ int main(int argc, char **argv)
     ibv_pd *pd = ibv_alloc_pd(ctx);
     if (!pd)
         die("alloc_pd");
-    ibv_cq *cq = ibv_create_cq(ctx, 8192, nullptr, nullptr, 0);
+
+    if (qd < 1)
+        qd = 1;
+    if (do_read && qd < read_min_qd)
+    {
+        fprintf(stderr, "[client] read qd=%d is too shallow for throughput; auto-raise to %d (override by passing read_min_qd)\n",
+                qd, read_min_qd);
+        qd = read_min_qd;
+    }
+    int cq_depth = 8192;
+    {
+        uint64_t need = (uint64_t)qps * (uint64_t)qd * 4ULL;
+        if (need > (uint64_t)cq_depth)
+            cq_depth = (int)std::min<uint64_t>(need, 262144ULL);
+    }
+    ibv_cq *cq = ibv_create_cq(ctx, cq_depth, nullptr, nullptr, 0);
     if (!cq)
         die("create_cq");
+
+    ibv_device_attr dev_attr{};
+    if (ibv_query_device(ctx, &dev_attr))
+        die("ibv_query_device");
+    int rd_atomic_cap = std::min<int>(dev_attr.max_qp_rd_atom, dev_attr.max_qp_init_rd_atom);
+    if (rd_atomic_cap < 1)
+        rd_atomic_cap = 1;
+    int rd_atomic = 1;
+    if (do_read)
+    {
+        int desired = (rd_atomic_arg > 0) ? rd_atomic_arg : qd;
+        if (desired < 1)
+            desired = 1;
+        rd_atomic = std::min(desired, rd_atomic_cap);
+    }
 
     ibv_qp_init_attr qia{};
     qia.qp_type = IBV_QPT_RC;
@@ -260,13 +623,16 @@ int main(int argc, char **argv)
     qia.cap.max_recv_wr = (qd > 1) ? qd : 1;
     qia.cap.max_send_sge = 1;
     qia.cap.max_recv_sge = 1;
-    ibv_qp *qp = ibv_create_qp(pd, &qia);
-    if (!qp)
+    ibv_qp *qp0 = ibv_create_qp(pd, &qia);
+    if (!qp0)
         die("create_qp");
+    std::vector<ibv_qp *> qps_vec;
+    qps_vec.reserve((size_t)qps);
+    qps_vec.push_back(qp0);
 
     // Exchange conninfo (client sends first)
     ConnInfo local{}, remote{};
-    local.qpn = qp->qp_num;
+    local.qpn = qp0->qp_num;
     local.port = port;
     local.gid_idx = (uint8_t)gid_idx;
     query_gid(ctx, port, gid_idx, local.gid);
@@ -274,7 +640,7 @@ int main(int argc, char **argv)
     xr(s, &remote, sizeof(remote));
 
     // QP RTR/RTS
-    qp_to_rtr_rts_roce(qp, remote, port, gid_idx, mtu);
+    qp_to_rtr_rts_roce(qp0, remote, port, gid_idx, mtu, rd_atomic);
 
     // Receive remote MR info
     struct
@@ -297,21 +663,58 @@ int main(int argc, char **argv)
         fprintf(stderr, "[client] span < msg; raising span to msg\n");
         span = msg;
     }
-    if (qd < 1)
-        qd = 1;
+    fprintf(stderr, "[client] op=%s msg=%zu qd=%d qps=%d span=%zu align=%zu mtu=%d sample=%d max_samples=%zu ts_ms=%d ts_out=%s write_ack=%d read_min_qd=%d rd_atomic=%d(cap=%d)\n",
+            do_read ? "READ" : "WRITE", msg, qd, qps, span, align, (mtu == IBV_MTU_4096 ? 4096 : mtu == IBV_MTU_2048 ? 2048
+                                                                                                                     : 1024),
+            sample, max_samples, ts_ms, ts_out ? ts_out : "-", write_ack, read_min_qd, rd_atomic, rd_atomic_cap);
+    if (ctrl.listen_port > 0)
+    {
+        fprintf(stderr, "[client] control enabled: port=%u high_sleep_us=%u low1_sleep_us=%u low2_sleep_us=%u low3_sleep_us=%u low4_sleep_us=%u bind_ip=%s\n",
+                (unsigned)ctrl.listen_port,
+                ctrl.high_sleep_us.load(std::memory_order_relaxed),
+                ctrl.low1_sleep_us.load(std::memory_order_relaxed),
+                ctrl.low2_sleep_us.load(std::memory_order_relaxed),
+                ctrl.low3_sleep_us.load(std::memory_order_relaxed),
+                ctrl.low4_sleep_us.load(std::memory_order_relaxed),
+                ctrl.bind_ip.c_str());
+    }
 
-    fprintf(stderr, "[client] op=%s msg=%zu qd=%d span=%zu align=%zu mtu=%d sample=%d max_samples=%zu ts_ms=%d ts_out=%s write_ack=%d\n",
-            do_read ? "READ" : "WRITE", msg, qd, span, align, (mtu == IBV_MTU_4096 ? 4096 : mtu == IBV_MTU_2048 ? 2048
-                                                                                                                : 1024),
-            sample, max_samples, ts_ms, ts_out ? ts_out : "-", write_ack);
+    std::thread control_thread;
 
-    // Local host buffer (we can reuse one buffer for all WRs)
+    // Local host buffer:
+    // For multi-inflight one-sided operations (READ / WRITE without ACK), each WR should
+    // use an independent local slot to avoid overlapping DMA writes on the same address.
+    bool multi_inflight_data = (do_read || !write_ack);
+    uint64_t io_slots64 = multi_inflight_data ? ((uint64_t)qd * (uint64_t)qps) : 1ULL;
+    if (io_slots64 < 1)
+        io_slots64 = 1;
+    if (io_slots64 > (uint64_t)SIZE_MAX)
+    {
+        fprintf(stderr, "[client] io slot overflow: qd=%d qps=%d\n", qd, qps);
+        return 2;
+    }
+    size_t io_slots = (size_t)io_slots64;
+    size_t buf_bytes = msg;
+    if (io_slots > 1)
+    {
+        if (msg > (SIZE_MAX / io_slots))
+        {
+            fprintf(stderr, "[client] local buffer size overflow: msg=%zu slots=%zu\n", msg, io_slots);
+            return 2;
+        }
+        buf_bytes = msg * io_slots;
+    }
+
     void *buf = nullptr;
-    if (posix_memalign(&buf, 4096, msg))
+    if (posix_memalign(&buf, 4096, buf_bytes))
         die("posix_memalign");
-    memset(buf, 0xAB, msg);
+    if (!do_read)
+    {
+        // WRITE path only needs one initialized payload slot.
+        memset(buf, 0xAB, msg);
+    }
     int lflags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
-    ibv_mr *lmr = ibv_reg_mr(pd, buf, msg, lflags);
+    ibv_mr *lmr = ibv_reg_mr(pd, buf, buf_bytes, lflags);
     if (!lmr)
         die("ibv_reg_mr (host)");
 
@@ -322,20 +725,42 @@ int main(int argc, char **argv)
         uint8_t write_ack; // 0/1
         uint16_t pad;
         uint32_t qd;
+        uint32_t qps;
     } params{};
     params.op = do_read ? 0 : 1;
     params.write_ack = write_ack ? 1 : 0;
     params.qd = (uint32_t)qd;
+    params.qps = (uint32_t)qps;
     xs(s, &params, sizeof(params));
+
+    // Build extra data QPs if requested (client sends conninfo first per QP).
+    for (int qi = 1; qi < qps; qi++)
+    {
+        ibv_qp *qpx = ibv_create_qp(pd, &qia);
+        if (!qpx)
+            die("create_qp");
+        ConnInfo lx{}, rx{};
+        lx.qpn = qpx->qp_num;
+        lx.port = port;
+        lx.gid_idx = (uint8_t)gid_idx;
+        memcpy(lx.gid, local.gid, sizeof(lx.gid));
+        xs(s, &lx, sizeof(lx));
+        xr(s, &rx, sizeof(rx));
+        qp_to_rtr_rts_roce(qpx, rx, port, gid_idx, mtu, rd_atomic);
+        qps_vec.push_back(qpx);
+    }
+
     char ready = 0;
     xr(s, &ready, 1);
+    ibv_qp *qp = qp0;
 
     // Pre-build QD descriptors (we'll update remote_addr each post)
     std::vector<ibv_sge> sges(qd);
     std::vector<ibv_send_wr> wrs(qd);
     for (int i = 0; i < qd; i++)
     {
-        sges[i].addr = (uintptr_t)buf;
+        int slot = multi_inflight_data ? i : 0;
+        sges[i].addr = (uintptr_t)buf + (uintptr_t)((size_t)slot * msg);
         sges[i].length = msg;
         sges[i].lkey = lmr->lkey;
         wrs[i] = {};
@@ -347,6 +772,7 @@ int main(int argc, char **argv)
         wrs[i].wr.rdma.rkey = rinfo.rkey;
     }
 
+    const bool random_pattern = (strcmp(pattern, "random") == 0);
     uint64_t off = 0;
     uint64_t cur = 0;
     uint64_t seed = 0x9e3779b97f4a7c15ULL ^ (uint64_t)time(nullptr);
@@ -387,7 +813,7 @@ int main(int argc, char **argv)
             ts_fp = stdout;
         if (ts_fp)
         {
-            fprintf(ts_fp, "ts_unix_ms,window_ms,ops,ops_per_s,throughput_gib_s,p50_us,p90_us,p99_us,p999_us,min_us,max_us,samples\n");
+            fprintf(ts_fp, "ts_unix_ms,window_ms,window_us,ops,ops_per_s,throughput_gib_s,p50_us,p90_us,p99_us,p999_us,min_us,max_us,samples,control_mode,pace_sleep_us,control_commands\n");
             fflush(ts_fp);
         }
         else
@@ -396,11 +822,35 @@ int main(int argc, char **argv)
         }
     }
 
+    if (ctrl.listen_port > 0)
+        control_thread = std::thread(control_server_loop, &ctrl);
+
+    auto cleanup_and_exit = [&](int code) -> int {
+        ctrl.shutdown.store(1, std::memory_order_relaxed);
+        if (control_thread.joinable())
+            control_thread.join();
+        if (ts_fp && ts_fp != stdout)
+        {
+            fclose(ts_fp);
+            ts_fp = nullptr;
+        }
+        return code;
+    };
+
     // Main loop: post bursts of up to qd WRs, then poll those completions.
     // We record per-WR start timestamps (indexed by wr_id) and compute completion latency.
     uint64_t total_posted = 0, total_completed = 0;
     auto t0 = std::chrono::high_resolution_clock::now();
-    std::vector<uint64_t> start_ns(qd, 0);
+    uint64_t total_slots64 = (uint64_t)qps * (uint64_t)qd;
+    if (total_slots64 < 1)
+        total_slots64 = 1;
+    if (total_slots64 > (uint64_t)SIZE_MAX)
+    {
+        fprintf(stderr, "[client] wr slot overflow: qps=%d qd=%d\n", qps, qd);
+        return 2;
+    }
+    size_t total_wr_slots = (size_t)total_slots64;
+    std::vector<uint64_t> start_ns(total_wr_slots, 0);
     // Store latencies in microseconds as double for higher precision.
     std::vector<double> lat_us;
     // Per-window latency samples for time-series output (also double).
@@ -422,6 +872,11 @@ int main(int argc, char **argv)
     // Time-series state: track last report time and last completion count.
     auto last_report = std::chrono::steady_clock::now();
     uint64_t last_completed = 0;
+    auto maybe_pace = [&]() {
+        uint32_t sleep_us = ctrl.pace_sleep_us.load(std::memory_order_relaxed);
+        if (sleep_us > 0)
+            std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+    };
 
     // Flush current window to CSV if time has elapsed or force=true at end.
     // We compute window ops/s, throughput, and latency percentiles.
@@ -429,13 +884,14 @@ int main(int argc, char **argv)
         if (ts_ms <= 0 || !ts_fp)
             return;
         auto now = std::chrono::steady_clock::now();
-        auto dt_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(now - last_report).count();
-        if (!force && dt_ms < (uint64_t)ts_ms)
+        auto dt_us = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(now - last_report).count();
+        if (!force && dt_us < (uint64_t)ts_ms * 1000ULL)
             return;
+        uint64_t dt_ms = dt_us / 1000ULL;
         uint64_t ops_win = total_completed - last_completed;
         if (!force && ops_win == 0 && lat_us_win.empty())
             return;
-        double sec_win = dt_ms / 1000.0;
+        double sec_win = dt_us / 1000000.0;
         if (sec_win <= 0.0)
             sec_win = 1e-9;
         double ops_s = ops_win / sec_win;
@@ -467,11 +923,17 @@ int main(int argc, char **argv)
                                   .count();
         if (ops_win == 0 && lat_us_win.empty())
             return;
-        fprintf(ts_fp, "%lu,%lu,%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%zu\n",
-                (unsigned long)ts_unix_ms, (unsigned long)dt_ms, (unsigned long)ops_win,
+        fprintf(ts_fp, "%lu,%lu,%lu,%lu,%.6f,%.6f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%zu,%s,%u,%lu\n",
+                (unsigned long)ts_unix_ms,
+                (unsigned long)dt_ms,
+                (unsigned long)dt_us,
+                (unsigned long)ops_win,
                 ops_s, gbps_win,
                 p50, p90, p99, p999,
-                minv, maxv, lat_us_win.size());
+                minv, maxv, lat_us_win.size(),
+                control_mode_name(ctrl.mode.load(std::memory_order_relaxed)),
+                ctrl.pace_sleep_us.load(std::memory_order_relaxed),
+                (unsigned long)ctrl.command_count.load(std::memory_order_relaxed));
         fflush(ts_fp);
         lat_us_win.clear();
         last_report = now;
@@ -480,67 +942,147 @@ int main(int argc, char **argv)
 
     if (do_read || !write_ack)
     {
-        while (total_posted < iters)
-        {
-            int burst = (int)std::min<uint64_t>(qd, iters - total_posted);
-            for (int i = 0; i < burst; i++)
-            {
-                off = next_off(std::string(pattern) == "random");
-                wrs[i].wr.rdma.remote_addr = rinfo.addr + off;
-                wrs[i].next = (i + 1 < burst) ? &wrs[i + 1] : nullptr;
-                // Record start time for this WR (wr_id == i).
-                start_ns[i] = now_ns();
-            }
-            ibv_send_wr *bad = nullptr;
-            int post_rc = ibv_post_send(qp, &wrs[0], &bad);
-            if (post_rc)
-            {
-                fprintf(stderr, "ibv_post_send failed rc=%d (%s) bad_wr_id=%lu bad_opcode=%d\n",
-                        post_rc, strerror(post_rc),
-                        bad ? (unsigned long)bad->wr_id : 0UL,
-                        bad ? (int)bad->opcode : -1);
-                return 3;
-            }
-            total_posted += burst;
+        // Keep QD steady by reposting immediately on completion.
+        // This avoids burst drain/refill behavior that lowers effective in-flight depth.
+        const int cq_poll_batch = 32;
+        std::vector<ibv_wc> wcs((size_t)cq_poll_batch);
 
-            // poll 'burst' completions
-            int comp = 0;
-            while (comp < burst)
+        const size_t total_slots = (size_t)qps * (size_t)qd;
+        std::vector<std::vector<ibv_sge>> data_sges((size_t)qps, std::vector<ibv_sge>((size_t)qd));
+        std::vector<std::vector<ibv_send_wr>> data_wrs((size_t)qps, std::vector<ibv_send_wr>((size_t)qd));
+        std::vector<ibv_send_wr *> slot_wr(total_slots, nullptr);
+        std::vector<int> slot_qp(total_slots, 0);
+        for (int qi = 0; qi < qps; qi++)
+        {
+            for (int si = 0; si < qd; si++)
             {
-                ibv_wc wc{};
-                int n = ibv_poll_cq(cq, 1, &wc);
-                if (n < 0)
-                    die("poll_cq");
-                if (n == 0)
+                size_t sid = (size_t)qi * (size_t)qd + (size_t)si;
+                int slot = multi_inflight_data ? (int)sid : 0;
+                data_sges[(size_t)qi][(size_t)si].addr = (uintptr_t)buf + (uintptr_t)((size_t)slot * msg);
+                data_sges[(size_t)qi][(size_t)si].length = msg;
+                data_sges[(size_t)qi][(size_t)si].lkey = lmr->lkey;
+
+                data_wrs[(size_t)qi][(size_t)si] = {};
+                data_wrs[(size_t)qi][(size_t)si].wr_id = sid;
+                data_wrs[(size_t)qi][(size_t)si].sg_list = &data_sges[(size_t)qi][(size_t)si];
+                data_wrs[(size_t)qi][(size_t)si].num_sge = 1;
+                data_wrs[(size_t)qi][(size_t)si].opcode = do_read ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
+                data_wrs[(size_t)qi][(size_t)si].send_flags = IBV_SEND_SIGNALED;
+                data_wrs[(size_t)qi][(size_t)si].wr.rdma.rkey = rinfo.rkey;
+
+                slot_wr[sid] = &data_wrs[(size_t)qi][(size_t)si];
+                slot_qp[sid] = qi;
+            }
+        }
+
+        auto queue_slot = [&](size_t sid, std::vector<ibv_send_wr *> &heads, std::vector<ibv_send_wr *> &tails) {
+            int qi = slot_qp[sid];
+            ibv_send_wr *wr = slot_wr[sid];
+            off = next_off(random_pattern);
+            wr->wr.rdma.remote_addr = rinfo.addr + off;
+            wr->next = nullptr;
+            start_ns[sid] = now_ns();
+            if (!heads[(size_t)qi])
+                heads[(size_t)qi] = wr;
+            else
+                tails[(size_t)qi]->next = wr;
+            tails[(size_t)qi] = wr;
+            total_posted++;
+        };
+        auto post_chains = [&](std::vector<ibv_send_wr *> &heads) -> bool {
+            for (int qi = 0; qi < qps; qi++)
+            {
+                ibv_send_wr *head = heads[(size_t)qi];
+                if (!head)
                     continue;
+                ibv_send_wr *bad = nullptr;
+                int post_rc = ibv_post_send(qps_vec[(size_t)qi], head, &bad);
+                if (post_rc)
+                {
+                    fprintf(stderr, "ibv_post_send failed rc=%d (%s) qp=%d bad_wr_id=%lu bad_opcode=%d\n",
+                            post_rc, strerror(post_rc), qi,
+                            bad ? (unsigned long)bad->wr_id : 0UL,
+                            bad ? (int)bad->opcode : -1);
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        std::vector<ibv_send_wr *> init_heads((size_t)qps, nullptr);
+        std::vector<ibv_send_wr *> init_tails((size_t)qps, nullptr);
+        size_t initial = (size_t)std::min<uint64_t>((uint64_t)total_slots, iters - total_posted);
+        for (size_t sid = 0; sid < initial; sid++)
+            queue_slot(sid, init_heads, init_tails);
+        if (!post_chains(init_heads))
+            return cleanup_and_exit(3);
+        if (initial > 0)
+            maybe_pace();
+
+        while (total_completed < total_posted || (!ctrl.stop_requested.load(std::memory_order_relaxed) && total_posted < iters))
+        {
+            int n = ibv_poll_cq(cq, cq_poll_batch, wcs.data());
+            if (n < 0)
+                die("poll_cq");
+            if (n == 0)
+            {
+                if (ctrl.stop_requested.load(std::memory_order_relaxed) && total_completed >= total_posted)
+                    break;
+                continue;
+            }
+
+            std::vector<ibv_send_wr *> repost_heads((size_t)qps, nullptr);
+            std::vector<ibv_send_wr *> repost_tails((size_t)qps, nullptr);
+            for (int i = 0; i < n; i++)
+            {
+                ibv_wc &wc = wcs[(size_t)i];
                 if (wc.status != IBV_WC_SUCCESS)
                 {
                     fprintf(stderr, "WC error: status=%d (%s), opcode=%d wr_id=%lu qpn=%u vend=0x%x\n",
                             wc.status, ibv_wc_status_str((ibv_wc_status)wc.status),
                             wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
-                    return 4;
+                    return cleanup_and_exit(4);
                 }
+                if (wc.wr_id >= (uint64_t)total_slots)
+                {
+                    fprintf(stderr, "WC error: unexpected wr_id=%lu (total_slots=%zu)\n",
+                            (unsigned long)wc.wr_id, total_slots);
+                    return cleanup_and_exit(4);
+                }
+
                 // Completion timestamp; latency is end-start for this wr_id.
                 uint64_t end_ns = now_ns();
-                uint64_t sid = wc.wr_id;
-                if (sid < start_ns.size())
+                double dur_us = (double)(end_ns - start_ns[(size_t)wc.wr_id]) / 1000.0;
+                // Sample every N-th completion to reduce overhead.
+                if ((total_completed % (uint64_t)sample) == 0)
                 {
-                    double dur_us = (double)(end_ns - start_ns[sid]) / 1000.0;
-                    // Sample every N-th completion to reduce overhead.
-                    if ((total_completed % (uint64_t)sample) == 0)
-                    {
-                        if (max_samples == 0 || lat_us.size() < max_samples)
-                            lat_us.push_back(dur_us);
-                        if (ts_ms > 0)
-                            lat_us_win.push_back(dur_us);
-                    }
+                    if (max_samples == 0 || lat_us.size() < max_samples)
+                        lat_us.push_back(dur_us);
+                    if (ts_ms > 0)
+                        lat_us_win.push_back(dur_us);
                 }
-                comp++;
                 total_completed++;
                 // Emit time-series line when window ends.
                 if (ts_ms > 0)
                     flush_window(false);
+
+                if (!ctrl.stop_requested.load(std::memory_order_relaxed) && total_posted < iters)
+                    queue_slot((size_t)wc.wr_id, repost_heads, repost_tails);
             }
+
+            if (!post_chains(repost_heads))
+                return cleanup_and_exit(3);
+            bool posted_new = false;
+            for (ibv_send_wr *head : repost_heads)
+            {
+                if (head)
+                {
+                    posted_new = true;
+                    break;
+                }
+            }
+            if (posted_new)
+                maybe_pace();
         }
     }
     else
@@ -593,15 +1135,19 @@ int main(int argc, char **argv)
         }
 
         uint32_t tag_seq = 1;
-        while (total_posted < iters)
+        while (total_completed < total_posted || (!ctrl.stop_requested.load(std::memory_order_relaxed) && total_posted < iters))
         {
+            if (ctrl.stop_requested.load(std::memory_order_relaxed) && total_completed >= total_posted)
+                break;
             int burst = (int)std::min<uint64_t>((uint64_t)max_inflight, iters - total_posted);
+            if (burst <= 0)
+                continue;
             std::unordered_map<uint32_t, int> tag_to_index;
             tag_to_index.reserve((size_t)burst * 2);
 
             for (int i = 0; i < burst; i++)
             {
-                off = next_off(std::string(pattern) == "random");
+                off = next_off(random_pattern);
                 start_ns[i] = now_ns();
                 wrs[i].wr.rdma.remote_addr = rinfo.addr + off;
                 wrs[i].next = (i + 1 < burst) ? &wrs[i + 1] : nullptr;
@@ -627,9 +1173,10 @@ int main(int argc, char **argv)
                         post_rc, strerror(post_rc),
                         bad ? (unsigned long)bad->wr_id : 0UL,
                         bad ? (int)bad->opcode : -1);
-                return 3;
+                return cleanup_and_exit(3);
             }
             total_posted += burst;
+            maybe_pace();
 
             bool got_send = false;
             std::vector<uint8_t> ack_seen((size_t)burst, 0);
@@ -647,14 +1194,14 @@ int main(int argc, char **argv)
                     fprintf(stderr, "WC error: status=%d (%s), opcode=%d wr_id=%lu qpn=%u vend=0x%x\n",
                             wc.status, ibv_wc_status_str((ibv_wc_status)wc.status),
                             wc.opcode, wc.wr_id, wc.qp_num, wc.vendor_err);
-                    return 4;
+                    return cleanup_and_exit(4);
                 }
                 if (wc.opcode == IBV_WC_RECV)
                 {
                     if (wc.wr_id >= (uint64_t)ack_wrs.size())
                     {
                         fprintf(stderr, "[client] invalid ACK wr_id=%lu\n", wc.wr_id);
-                        return 4;
+                        return cleanup_and_exit(4);
                     }
 
                     uint32_t ack_tag = ack_tags[(size_t)wc.wr_id];
@@ -662,13 +1209,13 @@ int main(int argc, char **argv)
                     if (it == tag_to_index.end())
                     {
                         fprintf(stderr, "[client] unexpected ACK tag=0x%x\n", ack_tag);
-                        return 4;
+                        return cleanup_and_exit(4);
                     }
                     int idx = it->second;
                     if (ack_seen[(size_t)idx])
                     {
                         fprintf(stderr, "[client] duplicate ACK tag=0x%x\n", ack_tag);
-                        return 4;
+                        return cleanup_and_exit(4);
                     }
                     ack_seen[(size_t)idx] = 1;
                     acked++;
@@ -710,10 +1257,17 @@ int main(int argc, char **argv)
     if (ts_ms > 0)
         flush_window(true);
     if (ts_fp && ts_fp != stdout)
+    {
         fclose(ts_fp);
+        ts_fp = nullptr;
+    }
 
-    printf("[client] done: iters=%lu msg=%zu qd=%d span=%zu pattern=%s\n", iters, msg, qd, span, pattern);
+    printf("[client] done: iters=%lu msg=%zu qd=%d qps=%d span=%zu pattern=%s\n", iters, msg, qd, qps, span, pattern);
     printf("[client] elapsed=%.3f s  ops=%.0f ops/s  throughput=%.2f GiB/s\n", sec, ops, gbps);
+    if (ctrl.stop_requested.load(std::memory_order_relaxed))
+        printf("[client] control_stop=1 mode=%s pace_sleep_us=%u\n",
+               control_mode_name(ctrl.mode.load(std::memory_order_relaxed)),
+               ctrl.pace_sleep_us.load(std::memory_order_relaxed));
     if (!lat_us.empty())
     {
         std::sort(lat_us.begin(), lat_us.end());
@@ -744,5 +1298,8 @@ int main(int argc, char **argv)
     // tell server we are done
     char done = 1;
     xs(s, &done, 1);
+    ctrl.shutdown.store(1, std::memory_order_relaxed);
+    if (control_thread.joinable())
+        control_thread.join();
     return 0;
 }
