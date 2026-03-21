@@ -7,22 +7,6 @@
 //   --dir=h2d   : Host -> Device（CPU 内存写入 GPU）
 //   --dir=d2h   : Device -> Host（GPU 读回 CPU 内存）
 //
-// 本实现的关键优化：
-//   1) 使用 event ring + inflight 窗口来限制每个 stream 的在途批次。
-//   2) 调度上采用“先 query 再提交”的非阻塞策略，而不是每轮都同步所有 stream。
-//   3) 这样能避免单个慢 stream 造成全局 head-of-line blocking，减少 DMA engine 气泡。
-//
-// 关键参数的调优顺序（建议）：
-//   1) 先固定 chunk 大小：--chunk_mb=128 或 256（过小会被提交开销吞噬，过大可能降低并行度）。
-//   2) 再调 --streams：先 8，再试 12/16；观察 util 是否继续上升。
-//   3) 再调 --inflight：建议 4/8/16；太小易气泡，太大可能增加排队抖动。
-//   4) 再调 --batch：建议 2/4/8；batch 太大可能放大单次批次时延，不利于细粒度调度。
-//
-// 为什么常见只能到 90%+ 而非 100%：
-//   - logger 的 utilization 是“有效负载 / 理论链路带宽”的估算值；
-//   - 实际还存在协议开销、事务粒度、驱动/调度开销、计量窗口平滑；
-//   - 所以 88~95% 往往已经接近该平台可达上限，Replay=0 说明链路本身健康。
-//
 // 编译示例（SM80）：
 //   nvcc gpu_be_pcie_memcpy_task.cu -O3 -std=c++14 -o gpu_pcie_memcpy \
 //     -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80

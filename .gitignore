@@ -4,3 +4,5 @@
 *.ptx
 *.cubin
 *.fatbin
+src/tools/__pycache__/
+src/bin
