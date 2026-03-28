@@ -78,6 +78,7 @@ KV_bytes_per_token = 2 × 36 × 8 × 128 × 2 = 147456 bytes
 - `dtype = bfloat16`
 - `max-model-len = 32768`
 - `gpu-memory-utilization = 0.85`
+- `max-num-seqs = 4`
 - `generation-config = vllm`
 - endpoint 使用：
   - `/v1/completions`
@@ -87,6 +88,12 @@ KV_bytes_per_token = 2 × 36 × 8 × 128 × 2 = 147456 bytes
 - 它不会像 `chat` endpoint 那样额外经过 chat template
 - 对 `prompt_tokens` 桶控更干净
 - 更适合 phase-1 的 timing collection
+
+为什么这一版要显式加 `max-num-seqs = 4`：
+
+- 我们希望 baseline 和 offloading 都承受相同的请求重叠压力
+- 对 native CPU KV offloading 来说，想观察更明显的 CPU-GPU KV 搬运，仅靠单条串行请求通常不够
+- 这里用“更长的上下文 + 更长的生成 + 受控并发”来放大两者差异
 
 ## 2. 为什么第 1 阶段不需要 LMCache
 
@@ -259,6 +266,7 @@ vllm serve $MODEL_PATH \
   --dtype bfloat16 \
   --max-model-len 32768 \
   --gpu-memory-utilization 0.85 \
+  --max-num-seqs 4 \
   --generation-config vllm \
   2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct.log
 ```
@@ -276,6 +284,9 @@ vllm serve $MODEL_PATH \
   - 与 Qwen 官方文档的原生长度口径一致
 - `--gpu-memory-utilization 0.85`
   - 比较保守，单卡更稳
+- `--max-num-seqs 4`
+  - 明确允许多条请求在服务端重叠
+  - 这是为了让 baseline 和 offloading 都处在更接近“有 KV 压力”的状态
 - `--generation-config vllm`
   - 避免 Hugging Face 仓库里的 `generation_config.json` 覆盖你的实验采样参数
 
@@ -308,25 +319,59 @@ curl -s $API_BASE/v1/completions \
 
 如果这一步能正常返回，说明采样脚本也能工作。
 
-## 8. 第 1A 阶段：构造 prefill prompts
+## 8. 第 1A 阶段：构造“长对话”模板与 prefill prompts
 
-### 8.1 首轮 prompt bucket
+### 8.1 先写一个长对话模板
 
-固定为：
+这一版不再只用一句简单前缀，而是改成更像真实多轮对话的纯文本模板。
 
-- `512`
-- `1024`
+这样做的目的有两个：
+
+- 让上下文更接近真实 assistant 场景
+- 让 prompt 里天然包含更多历史轮次，从而放大 KV footprint
+
+直接复制执行：
+
+```bash
+cat > $RUN_ROOT/data/long_dialogue_prefix.txt <<'EOF'
+System: You are a careful and concise assistant helping with code, systems, and ML infrastructure questions.
+
+User: I am profiling a distributed inference runtime and want to understand memory movement.
+Assistant: Sure. We should separate prefill cost, decode cost, and cache movement so we can reason about contention clearly.
+
+User: I also care about long-context serving and cache offloading.
+Assistant: Then we should use longer dialogue-style prompts, preserve multi-turn history, and compare a baseline path with an offloading path under the same request mix.
+
+User: Please keep track of token count, decode length, throughput, and KV size.
+Assistant: Understood. We will focus on prompt length, generation length, and the implied KV footprint under the target model.
+
+User: I want the workload to resemble a realistic debugging conversation with repeated context carry-over.
+Assistant:
+EOF
+```
+
+### 8.2 首轮 prefill bucket
+
+为了更容易观察长上下文下的差异，这一版把 bucket 往长上下文集中：
+
 - `2048`
 - `4096`
 - `8192`
 - `16384`
-- `32768`
+- `24576`
+- `28672`
 
 每桶样本数：
 
-- `20`
+- `12`
 
-### 8.2 直接复制执行
+为什么不再直接用 `32768`：
+
+- 你之前已经实际撞到过 `max-model-len=32768` 的上限
+- `32768 prompt + 1 output token` 会直接报错
+- `28672` 仍然足够长，但更稳，更适合 baseline/offloading 对照
+
+### 8.3 直接复制执行
 
 ```bash
 cd $ROOT
@@ -334,13 +379,13 @@ source $VENV_PATH/bin/activate
 
 python3 src/tools/pd_build_bucket_prompts.py \
   --model_or_tokenizer $MODEL_PATH \
-  --target_tokens 512,1024,2048,4096,8192,16384,32768 \
-  --samples_per_bucket 20 \
-  --prefix "You are a helpful assistant." \
+  --target_tokens 2048,4096,8192,16384,24576,28672 \
+  --samples_per_bucket 12 \
+  --prefix_file $RUN_ROOT/data/long_dialogue_prefix.txt \
   --out $RUN_ROOT/data/prefill_prompts.jsonl
 ```
 
-### 8.3 快速检查
+### 8.4 快速检查
 
 ```bash
 head -n 2 $RUN_ROOT/data/prefill_prompts.jsonl
@@ -349,7 +394,7 @@ wc -l $RUN_ROOT/data/prefill_prompts.jsonl
 
 理论上总行数应为：
 
-- `7 × 20 = 140`
+- `6 × 12 = 72`
 
 ## 9. 第 1B 阶段：采集 prefill-only 样本
 
@@ -383,8 +428,16 @@ python3 src/tools/pd_collect_openai_samples.py \
   --mode prefill \
   --input_jsonl $RUN_ROOT/data/prefill_prompts.jsonl \
   --endpoint completion \
+  --parallel_requests 4 \
   --out_csv $RUN_ROOT/data/prefill_samples.csv
 ```
+
+这里的 `--parallel_requests 4` 很重要：
+
+- 它会同时发出 4 条请求
+- 对 baseline 和 offloading 都使用同样的并发
+- 这样才能让两边承受相近的请求重叠压力
+- 如果你发现 baseline 出现明显失败，再把 baseline 和 offloading **一起**降到 `2`
 
 ### 9.3 快速检查
 
@@ -419,16 +472,16 @@ tail -n 5 $RUN_ROOT/data/prefill_samples.csv
 
 固定为：
 
-- `512`
-- `1024`
 - `2048`
 - `4096`
 - `8192`
 - `16384`
+- `24576`
+- `28672`
 
 每桶样本数：
 
-- `20`
+- `12`
 
 ### 10.2 直接复制执行
 
@@ -438,9 +491,9 @@ source $VENV_PATH/bin/activate
 
 python3 src/tools/pd_build_bucket_prompts.py \
   --model_or_tokenizer $MODEL_PATH \
-  --target_tokens 512,1024,2048,4096,8192,16384 \
-  --samples_per_bucket 20 \
-  --prefix "You are a helpful assistant." \
+  --target_tokens 2048,4096,8192,16384,24576,28672 \
+  --samples_per_bucket 12 \
+  --prefix_file $RUN_ROOT/data/long_dialogue_prefix.txt \
   --out $RUN_ROOT/data/decode_prompts.jsonl
 ```
 
@@ -450,10 +503,9 @@ python3 src/tools/pd_build_bucket_prompts.py \
 
 固定为：
 
-- `32`
-- `64`
 - `128`
 - `256`
+- `512`
 
 ### 11.2 采样口径
 
@@ -464,6 +516,12 @@ python3 src/tools/pd_build_bucket_prompts.py \
   - `decode_ms_per_token = elapsed_ms / generated_tokens`
 
 这不是纯净的真实 decode kernel 时间，但足够支撑第一版 PD imitation。
+
+为什么把 generation 往大调：
+
+- `g=32` 和 `g=64` 更容易被固定开销污染
+- `g=128/256/512` 更接近 steady-state decode
+- 生成越长，decode 期间累计持有和增长的 KV 也越多，更容易放大 offloading 路径的效果
 
 ### 11.3 直接复制执行
 
@@ -476,8 +534,9 @@ python3 src/tools/pd_collect_openai_samples.py \
   --model $SERVED_MODEL \
   --mode decode \
   --input_jsonl $RUN_ROOT/data/decode_prompts.jsonl \
-  --generated_tokens 32,64,128,256 \
+  --generated_tokens 128,256,512 \
   --endpoint completion \
+  --parallel_requests 4 \
   --out_csv $RUN_ROOT/data/decode_samples.csv
 ```
 
@@ -577,22 +636,26 @@ vllm serve $MODEL_PATH \
   --dtype bfloat16 \
   --max-model-len 32768 \
   --gpu-memory-utilization 0.85 \
+  --max-num-seqs 4 \
   --generation-config vllm \
-  --kv-offloading-size 8 \
+  --kv-offloading-size 32 \
   --kv-offloading-backend native \
   2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log
 ```
 
 ### 13.3 这意味着什么
 
-- `--kv-offloading-size 8`
-  - 给 CPU 侧 KV offloading buffer 分配 `8 GiB`
+- `--kv-offloading-size 32`
+  - 给 CPU 侧 KV offloading buffer 分配 `32 GiB`
+  - 这不是 vLLM 官方给出的统一推荐值，而是为了更容易观察 offloading 效果而选的“更激进”的实验值
+  - 对当前 `Qwen3-8B` + 长上下文 workload，这个值更容易让 CPU-GPU 间的 KV 搬运变得可观
 - `--kv-offloading-backend native`
   - 使用 vLLM 原生 CPU KV offloading
 
 这个实验适合回答：
 
 - 开启 native KV offloading 后，单 GPU 上的请求时延和吞吐怎么变
+- 在更长对话、更长 context、更长 generation、受控并发下，CPU-GPU KV 搬运是否开始显著影响 decode / prefill
 
 但它不改变这份手册的主目标：
 
@@ -639,7 +702,7 @@ python3 src/tools/pd_imitation_report.py \
 这份对照报告的重点是：
 
 - baseline 和 native CPU offloading 的 prefill latency 是否出现分叉
-- `g=256` 这个更接近 steady-state 的 decode proxy 在不同 context 下是否明显变差
+- 当前最大 generation bucket 这个更接近 steady-state 的 decode proxy 在不同 context 下是否明显变差
 
 ## 14. 最低验收标准
 

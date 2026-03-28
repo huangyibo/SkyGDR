@@ -12,9 +12,9 @@
 
 补充说明：
 
-- 预设的 `32768` prefill bucket 没有进入最终 summary。
-- 原因不是脚本漏跑，而是 `max-model-len=32768` 时再请求 `1` 个输出 token 会触发长度上限，导致该 bucket 的 20 个样本全部返回 `400`。
-- 因此本轮有效 prefill 上限实际上是 `16384`。如果后续还想贴近上限，建议把最大 bucket 改成 `32736` 或更低。
+- prefill bucket `32768` 有失败样本：`20 / 20`。
+- 这类失败通常意味着 prompt 长度已经贴近 `max-model-len`，或者当前并发/配置下资源压力过高。
+- 如果你后续还想贴近上限，建议把最大 bucket 再往下退一点，或者在保持 baseline/offloading 同配置的前提下降低并发。
 
 ## 2. 关键结论
 
@@ -81,8 +81,8 @@
 
 - 当前 `decode-only` 口径本质上是“长 context + 指定 generation length 的整段 elapsed time”，不是纯 kernel 级 decode 时间。
 - 因此 `g=32` 的 `ms/token` 明显被固定开销污染，不能直接当成 steady-state decode 速度。
-- `g=128` 和 `g=256` 更接近稳定区间。本轮里，`g=256` 的 decode 吞吐从 `512` context 的 `90.15 tokens/s` 下降到 `16384` context 的 `76.50 tokens/s`。
-- 对后续 case study，如果你需要一个更稳的 decode proxy，建议优先使用 `g=128` 或 `g=256` 的桶，而不是 `g=32`。
+- 更大的 generation bucket 更接近稳定区间。本轮里，`g=256` 的 decode 吞吐区间约为 `76.50 ~ 90.15 tokens/s`。
+- 对后续 case study，如果你需要一个更稳的 decode proxy，建议优先使用最大的 generation bucket；当前结果就是 `g=256`。
 
 ## 5. 逻辑 KV Footprint
 
@@ -110,8 +110,8 @@
 
 1. `prefill_time_ms` 直接取当前 trace 里的桶均值。
 2. `decode_time_ms` 如果是做粗粒度 phase-1 模拟，可以保留当前值。
-3. 如果你更关心 steady-state decode，不要优先用 `g=32`，而是优先采信 `g=128` / `g=256`。
-4. 如果你要构造接近上限的长上下文 workload，把 `32768` bucket 改成略低于上限的值后再补采一轮。
+3. 如果你更关心 steady-state decode，不要优先用 `g=32`，而是优先采信更大的 generation bucket；当前结果里建议使用 `g=256`。
+4. 如果你要构造接近上限的长上下文 workload，建议把最大 bucket 保持在略低于上限的位置，并在相同并发下验证成功率。
 
 ## 7. 当前局限
 

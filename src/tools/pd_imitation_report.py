@@ -300,6 +300,24 @@ def load_summary(path: str) -> dict:
         return json.load(f)
 
 
+def summarize_failed_buckets(rows: list[dict[str, str]], mode: str) -> list[dict]:
+    grouped: dict[int, dict[str, int]] = defaultdict(lambda: {"total": 0, "failed": 0})
+    for row in rows:
+        if row.get("mode") != mode:
+            continue
+        bucket = int(row["prompt_tokens"])
+        grouped[bucket]["total"] += 1
+        if row["http_status"] != "200" or row["error"]:
+            grouped[bucket]["failed"] += 1
+    out = []
+    for bucket in sorted(grouped):
+        total = grouped[bucket]["total"]
+        failed = grouped[bucket]["failed"]
+        if failed:
+            out.append({"bucket": bucket, "failed": failed, "total": total})
+    return out
+
+
 def write_aggregates(prefill: list[dict], decode: list[dict], out_dir: str) -> tuple[str, str]:
     prefill_csv = os.path.join(out_dir, "prefill_aggregate.csv")
     decode_csv = os.path.join(out_dir, "decode_aggregate.csv")
@@ -387,6 +405,7 @@ def build_plots(prefill: list[dict], decode: list[dict], summary: dict, trace_cs
 
 def build_report(
     out_path: str,
+    raw_prefill_rows: list[dict[str, str]],
     prefill: list[dict],
     decode: list[dict],
     summary: dict,
@@ -395,15 +414,20 @@ def build_report(
 ) -> None:
     max_prefill = prefill[-1]
     best_prefill_tps = max(prefill, key=lambda x: x["prefill_tps"])
-    decode_256 = [r for r in decode if r["generated_tokens"] == 256]
     decode_32 = [r for r in decode if r["generated_tokens"] == 32]
-    worst_decode_256 = max(decode_256, key=lambda x: x["decode_ms_per_token"])
-    best_decode_256 = min(decode_256, key=lambda x: x["decode_ms_per_token"])
-    worst_decode_32 = max(decode_32, key=lambda x: x["decode_ms_per_token"])
+    max_gen = max(r["generated_tokens"] for r in decode)
+    decode_maxgen = [r for r in decode if r["generated_tokens"] == max_gen]
+    worst_decode_maxgen = max(decode_maxgen, key=lambda x: x["decode_ms_per_token"])
+    best_decode_maxgen = min(decode_maxgen, key=lambda x: x["decode_ms_per_token"])
+    worst_decode_32 = max(decode_32, key=lambda x: x["decode_ms_per_token"]) if decode_32 else None
 
     with open(trace_csv, newline="") as f:
         trace_rows = list(csv.DictReader(f))
     max_kv_row = max(trace_rows, key=lambda r: int(r["decode_required_kv_bytes"]))
+    failed_prefill = summarize_failed_buckets(raw_prefill_rows, "prefill")
+    kv_rows_for_maxgen = [
+        r for r in trace_rows if int(r["generated_tokens"]) == max_gen
+    ]
 
     rel = lambda p: os.path.relpath(p, os.path.dirname(out_path))
 
@@ -416,21 +440,30 @@ def build_report(
     lines.append("")
     lines.append("- 模型：`Qwen/Qwen3-8B`，服务名：`Qwen3-8B-Instruct`")
     lines.append("- 采样对象：`prefill-only`、`decode-only`、逻辑 `pd_imitation_trace.csv`")
-    lines.append("- `prefill` 成功 bucket：`512 ~ 16384` tokens")
-    lines.append("- `decode` 成功 bucket：context `512 ~ 16384`，generation `32/64/128/256`")
+    lines.append(f"- `prefill` 成功 bucket：`{prefill[0]['prompt_tokens']} ~ {prefill[-1]['prompt_tokens']}` tokens")
+    decode_contexts = sorted({r['context_tokens'] for r in decode})
+    decode_gens = sorted({r['generated_tokens'] for r in decode})
+    lines.append(
+        f"- `decode` 成功 bucket：context `{decode_contexts[0]} ~ {decode_contexts[-1]}`，generation `{'/'.join(str(x) for x in decode_gens)}`"
+    )
     lines.append(f"- 逻辑 trace 行数：`{summary['trace_rows']}`")
     lines.append("")
-    lines.append("补充说明：")
-    lines.append("")
-    lines.append("- 预设的 `32768` prefill bucket 没有进入最终 summary。")
-    lines.append("- 原因不是脚本漏跑，而是 `max-model-len=32768` 时再请求 `1` 个输出 token 会触发长度上限，导致该 bucket 的 20 个样本全部返回 `400`。")
-    lines.append("- 因此本轮有效 prefill 上限实际上是 `16384`。如果后续还想贴近上限，建议把最大 bucket 改成 `32736` 或更低。")
-    lines.append("")
+    if failed_prefill:
+        lines.append("补充说明：")
+        lines.append("")
+        for item in failed_prefill:
+            lines.append(f"- prefill bucket `{item['bucket']}` 有失败样本：`{item['failed']} / {item['total']}`。")
+        lines.append("- 这类失败通常意味着 prompt 长度已经贴近 `max-model-len`，或者当前并发/配置下资源压力过高。")
+        lines.append("- 如果你后续还想贴近上限，建议把最大 bucket 再往下退一点，或者在保持 baseline/offloading 同配置的前提下降低并发。")
+        lines.append("")
     lines.append("## 2. 关键结论")
     lines.append("")
-    lines.append(f"1. `prefill` 延迟随 prompt 长度单调上升，从 `512` tokens 的 `{fmt_ms(prefill[0]['mean_ms'])} ms` 增长到 `16384` tokens 的 `{fmt_ms(max_prefill['mean_ms'])} ms`。")
-    lines.append(f"2. `prefill throughput` 在中等长度区间最高，峰值出现在 `2048` tokens，约为 `{fmt_tps(best_prefill_tps['prefill_tps'])} tokens/s`；到 `16384` tokens 时回落到 `{fmt_tps(max_prefill['prefill_tps'])} tokens/s`。")
-    lines.append(f"3. `decode` 的粗粒度 `ms/token` 对 generation 长度很敏感：`g=32` 时固定开销占比很高，在 `16384` context 下膨胀到 `{fmt_ms(worst_decode_32['decode_ms_per_token'])} ms/token`；而 `g=256` 更接近稳态，区间约为 `{fmt_ms(best_decode_256['decode_ms_per_token'])} ~ {fmt_ms(worst_decode_256['decode_ms_per_token'])} ms/token`。")
+    lines.append(f"1. `prefill` 延迟随 prompt 长度单调上升，从 `{prefill[0]['prompt_tokens']}` tokens 的 `{fmt_ms(prefill[0]['mean_ms'])} ms` 增长到 `{max_prefill['prompt_tokens']}` tokens 的 `{fmt_ms(max_prefill['mean_ms'])} ms`。")
+    lines.append(f"2. `prefill throughput` 在中等长度区间最高，峰值出现在 `{best_prefill_tps['prompt_tokens']}` tokens，约为 `{fmt_tps(best_prefill_tps['prefill_tps'])} tokens/s`；到 `{max_prefill['prompt_tokens']}` tokens 时回落到 `{fmt_tps(max_prefill['prefill_tps'])} tokens/s`。")
+    if worst_decode_32 is not None:
+        lines.append(f"3. `decode` 的粗粒度 `ms/token` 对 generation 长度很敏感：`g=32` 时固定开销占比很高，在 `16384` context 下膨胀到 `{fmt_ms(worst_decode_32['decode_ms_per_token'])} ms/token`；而 `g={max_gen}` 更接近稳态，区间约为 `{fmt_ms(best_decode_maxgen['decode_ms_per_token'])} ~ {fmt_ms(worst_decode_maxgen['decode_ms_per_token'])} ms/token`。")
+    else:
+        lines.append(f"3. 当前结果没有采 `g=32`，因此更适合直接把最大 generation bucket 视为 steady-state proxy。本轮 `g={max_gen}` 的 decode `ms/token` 区间约为 `{fmt_ms(best_decode_maxgen['decode_ms_per_token'])} ~ {fmt_ms(worst_decode_maxgen['decode_ms_per_token'])} ms/token`。")
     lines.append(f"4. 逻辑 KV footprint 与 context 线性相关，本轮最大点是 `{max_kv_row['context_tokens']}` tokens，对应 `{fmt_gib(float(max_kv_row['decode_required_kv_bytes']))} GiB` 的 decode-side KV。")
     lines.append("")
     lines.append("## 3. Prefill 结果")
@@ -468,9 +501,10 @@ def build_report(
     lines.append("解读：")
     lines.append("")
     lines.append("- 当前 `decode-only` 口径本质上是“长 context + 指定 generation length 的整段 elapsed time”，不是纯 kernel 级 decode 时间。")
-    lines.append("- 因此 `g=32` 的 `ms/token` 明显被固定开销污染，不能直接当成 steady-state decode 速度。")
-    lines.append("- `g=128` 和 `g=256` 更接近稳定区间。本轮里，`g=256` 的 decode 吞吐从 `512` context 的 `90.15 tokens/s` 下降到 `16384` context 的 `76.50 tokens/s`。")
-    lines.append("- 对后续 case study，如果你需要一个更稳的 decode proxy，建议优先使用 `g=128` 或 `g=256` 的桶，而不是 `g=32`。")
+    if worst_decode_32 is not None:
+        lines.append("- 因此 `g=32` 的 `ms/token` 明显被固定开销污染，不能直接当成 steady-state decode 速度。")
+    lines.append(f"- 更大的 generation bucket 更接近稳定区间。本轮里，`g={max_gen}` 的 decode 吞吐区间约为 `{fmt_tps(min(r['decode_tps'] for r in decode_maxgen))} ~ {fmt_tps(max(r['decode_tps'] for r in decode_maxgen))} tokens/s`。")
+    lines.append(f"- 对后续 case study，如果你需要一个更稳的 decode proxy，建议优先使用最大的 generation bucket；当前结果就是 `g={max_gen}`。")
     lines.append("")
     lines.append("## 5. 逻辑 KV Footprint")
     lines.append("")
@@ -480,12 +514,10 @@ def build_report(
     lines.append("")
     lines.append("对应关系非常直接：")
     lines.append("")
-    lines.append("- `512` context: `0.07 GiB`")
-    lines.append("- `1024` context: `0.14 GiB`")
-    lines.append("- `2048` context: `0.28 GiB`")
-    lines.append("- `4096` context: `0.56 GiB`")
-    lines.append("- `8192` context: `1.12 GiB`")
-    lines.append("- `16384` context: `2.25 GiB`")
+    for row in kv_rows_for_maxgen:
+        lines.append(
+            f"- `{row['context_tokens']}` context: `{fmt_gib(float(row['decode_required_kv_bytes']))} GiB`"
+        )
     lines.append("")
     lines.append("这部分结论对 PD imitation 很关键：")
     lines.append("")
@@ -498,8 +530,11 @@ def build_report(
     lines.append("")
     lines.append("1. `prefill_time_ms` 直接取当前 trace 里的桶均值。")
     lines.append("2. `decode_time_ms` 如果是做粗粒度 phase-1 模拟，可以保留当前值。")
-    lines.append("3. 如果你更关心 steady-state decode，不要优先用 `g=32`，而是优先采信 `g=128` / `g=256`。")
-    lines.append("4. 如果你要构造接近上限的长上下文 workload，把 `32768` bucket 改成略低于上限的值后再补采一轮。")
+    if worst_decode_32 is not None:
+        lines.append(f"3. 如果你更关心 steady-state decode，不要优先用 `g=32`，而是优先采信更大的 generation bucket；当前结果里建议使用 `g={max_gen}`。")
+    else:
+        lines.append(f"3. 如果你更关心 steady-state decode，优先采信最大的 generation bucket；当前结果里建议使用 `g={max_gen}`。")
+    lines.append("4. 如果你要构造接近上限的长上下文 workload，建议把最大 bucket 保持在略低于上限的位置，并在相同并发下验证成功率。")
     lines.append("")
     lines.append("## 7. 当前局限")
     lines.append("")
@@ -554,26 +589,27 @@ def build_compare_plots(
 
     base_decode_idx = index_decode(base_decode)
     compare_decode_idx = index_decode(compare_decode)
-    shared_decode_256 = sorted(
-        k[0]
-        for k in set(base_decode_idx) & set(compare_decode_idx)
-        if k[1] == 256
-    )
+    shared_decode_keys = set(base_decode_idx) & set(compare_decode_idx)
+    shared_gens = sorted({k[1] for k in shared_decode_keys})
+    if not shared_gens:
+        raise ValueError("no shared decode buckets between baseline and compare results")
+    chosen_gen = shared_gens[-1]
+    shared_decode_ctx = sorted(k[0] for k in shared_decode_keys if k[1] == chosen_gen)
 
-    paths["compare_decode_g256_mspt"] = os.path.join(fig_dir, "compare_decode_g256_mspt.svg")
+    paths["compare_decode_maxgen_mspt"] = os.path.join(fig_dir, f"compare_decode_g{chosen_gen}_mspt.svg")
     svg_line_chart(
         series=[
             {
-                "label": f"{base_label} decode g=256",
-                "points": [(ctx, base_decode_idx[(ctx, 256)]["decode_ms_per_token"]) for ctx in shared_decode_256],
+                "label": f"{base_label} decode g={chosen_gen}",
+                "points": [(ctx, base_decode_idx[(ctx, chosen_gen)]["decode_ms_per_token"]) for ctx in shared_decode_ctx],
             },
             {
-                "label": f"{compare_label} decode g=256",
-                "points": [(ctx, compare_decode_idx[(ctx, 256)]["decode_ms_per_token"]) for ctx in shared_decode_256],
+                "label": f"{compare_label} decode g={chosen_gen}",
+                "points": [(ctx, compare_decode_idx[(ctx, chosen_gen)]["decode_ms_per_token"]) for ctx in shared_decode_ctx],
             },
         ],
-        out_path=paths["compare_decode_g256_mspt"],
-        title="Decode ms/token at gen=256: baseline vs native offload",
+        out_path=paths["compare_decode_maxgen_mspt"],
+        title=f"Decode ms/token at gen={chosen_gen}: baseline vs native offload",
         x_label="Context Tokens",
         y_label="ms/token",
     )
@@ -601,24 +637,25 @@ def build_compare_report(
 
     base_decode_idx = index_decode(base_decode)
     compare_decode_idx = index_decode(compare_decode)
-    shared_decode_256 = sorted(
-        k[0]
-        for k in set(base_decode_idx) & set(compare_decode_idx)
-        if k[1] == 256
-    )
+    shared_decode_keys = set(base_decode_idx) & set(compare_decode_idx)
+    shared_gens = sorted({k[1] for k in shared_decode_keys})
+    if not shared_gens:
+        raise ValueError("no shared decode buckets between baseline and compare results")
+    chosen_gen = shared_gens[-1]
+    shared_decode_ctx = sorted(k[0] for k in shared_decode_keys if k[1] == chosen_gen)
 
     def pct_delta(new: float, old: float) -> float:
         return (new - old) / old * 100.0 if old else 0.0
 
     largest_prefill = shared_prefill[-1]
-    largest_decode_ctx = shared_decode_256[-1]
+    largest_decode_ctx = shared_decode_ctx[-1]
     prefill_delta = pct_delta(
         compare_prefill_idx[largest_prefill]["mean_ms"],
         base_prefill_idx[largest_prefill]["mean_ms"],
     )
     decode_delta = pct_delta(
-        compare_decode_idx[(largest_decode_ctx, 256)]["decode_ms_per_token"],
-        base_decode_idx[(largest_decode_ctx, 256)]["decode_ms_per_token"],
+        compare_decode_idx[(largest_decode_ctx, chosen_gen)]["decode_ms_per_token"],
+        base_decode_idx[(largest_decode_ctx, chosen_gen)]["decode_ms_per_token"],
     )
 
     lines: list[str] = []
@@ -637,7 +674,7 @@ def build_compare_report(
         f"1. 在最大共享 prefill bucket `prompt={largest_prefill}` 上，`{compare_label}` 相比 `{base_label}` 的 prefill 平均延迟变化为 `{prefill_delta:+.2f}%`。"
     )
     lines.append(
-        f"2. 在最大共享 decode bucket `context={largest_decode_ctx}, gen=256` 上，`{compare_label}` 相比 `{base_label}` 的 decode `ms/token` 变化为 `{decode_delta:+.2f}%`。"
+        f"2. 在最大共享 decode bucket `context={largest_decode_ctx}, gen={chosen_gen}` 上，`{compare_label}` 相比 `{base_label}` 的 decode `ms/token` 变化为 `{decode_delta:+.2f}%`。"
     )
     lines.append("3. 如果 `compare_label` 是 native CPU offloading，这两个量就是最值得先看的主指标：prefill 会不会被拉长，steady-state decode 会不会变差。")
     lines.append("")
@@ -652,22 +689,22 @@ def build_compare_report(
         c = compare_prefill_idx[k]["mean_ms"]
         lines.append(f"| {k} | {fmt_ms(b)} | {fmt_ms(c)} | {pct_delta(c, b):+.2f}% |")
     lines.append("")
-    lines.append("## 4. Decode 对照（gen=256）")
+    lines.append(f"## 4. Decode 对照（gen={chosen_gen}）")
     lines.append("")
-    lines.append(f"![compare decode]({escape_xml(rel(plot_paths['compare_decode_g256_mspt']))})")
+    lines.append(f"![compare decode]({escape_xml(rel(plot_paths['compare_decode_maxgen_mspt']))})")
     lines.append("")
     lines.append("| context tokens | baseline ms/token | compare ms/token | delta % |")
     lines.append("| --- | ---: | ---: | ---: |")
-    for ctx in shared_decode_256:
-        b = base_decode_idx[(ctx, 256)]["decode_ms_per_token"]
-        c = compare_decode_idx[(ctx, 256)]["decode_ms_per_token"]
+    for ctx in shared_decode_ctx:
+        b = base_decode_idx[(ctx, chosen_gen)]["decode_ms_per_token"]
+        c = compare_decode_idx[(ctx, chosen_gen)]["decode_ms_per_token"]
         lines.append(f"| {ctx} | {fmt_ms(b)} | {fmt_ms(c)} | {pct_delta(c, b):+.2f}% |")
     lines.append("")
     lines.append("## 5. 使用建议")
     lines.append("")
     lines.append("- 如果 offloading 主要拉长的是大 context 下的 prefill，说明 CPU 侧 KV 搬运已经开始影响长 prompt 请求。")
-    lines.append("- 如果 offloading 主要拉长的是 `gen=256` 的 decode `ms/token`，说明它已经影响 steady-state decode，而不仅仅是固定开销。")
-    lines.append("- 如果只有 `g=32` 变差而 `g=256` 变化不大，优先把它解释为固定开销或短序列效应，而不是 steady-state decode 退化。")
+    lines.append(f"- 如果 offloading 主要拉长的是 `gen={chosen_gen}` 的 decode `ms/token`，说明它已经影响 steady-state decode，而不仅仅是固定开销。")
+    lines.append(f"- 如果只有小 generation bucket 变差而 `g={chosen_gen}` 变化不大，优先把它解释为固定开销或短序列效应，而不是 steady-state decode 退化。")
     lines.append("")
 
     with open(out_path, "w", encoding="utf-8") as f:
@@ -699,7 +736,7 @@ def main() -> int:
     prefill_csv, decode_csv = write_aggregates(prefill, decode, summary_dir)
     plot_paths = build_plots(prefill, decode, summary, trace_csv, fig_dir)
     report_path = os.path.join(summary_dir, "pd_imitation_report.md")
-    build_report(report_path, prefill, decode, summary, plot_paths, trace_csv)
+    build_report(report_path, prefill_rows, prefill, decode, summary, plot_paths, trace_csv)
 
     print(f"[ok] wrote {prefill_csv}")
     print(f"[ok] wrote {decode_csv}")

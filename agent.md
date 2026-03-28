@@ -150,12 +150,15 @@
 
 - `case study` 现在已经有最小闭环原型，但还不是完整 runtime。
 - 当前新增了一条更贴合硬件现实的 `PD imitation` 路线：
-  - phase 1 不尝试跑真实 LMCache PD
+  - phase 1 不尝试跑真实 PD 部署
   - phase 1 只采 `prefill-only` 与 `decode-only`
   - phase 1 通过模型结构计算 `KV bytes per token`
   - phase 1 最终生成逻辑上的 `pd_imitation_trace.csv`
+  - phase 1 当前主线是 `vLLM native / single-GPU / prefill-decode timing extraction`
+  - LMCache 不再是 phase 1 必需项，只保留给 phase 2 的 remote KV / replay 扩展
 - 对应文档：
-  - `docs/lmcache_pd_imitation_runbook.md`
+  - `docs/pd_imitation_runbook.md`
+  - 当前文档已进一步收敛为 `Qwen3-8B-Instruct` 的实操版
 - 对应脚本：
   - `src/tools/pd_build_bucket_prompts.py`
   - `src/tools/pd_collect_openai_samples.py`

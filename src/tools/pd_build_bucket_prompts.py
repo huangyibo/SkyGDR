@@ -91,6 +91,7 @@ def parse_args():
     ap.add_argument("--target_tokens", required=True, help="comma-separated token buckets, e.g. 512,1024,2048")
     ap.add_argument("--samples_per_bucket", type=int, default=20)
     ap.add_argument("--prefix", default="You are a helpful assistant.")
+    ap.add_argument("--prefix_file", default="", help="optional text file to use as prefix template")
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--out", required=True, help="output JSONL path")
     return ap.parse_args()
@@ -101,6 +102,9 @@ def main() -> int:
     random.seed(args.seed)
     tokenizer = load_tokenizer(args.model_or_tokenizer)
     buckets = parse_int_list(args.target_tokens)
+    prefix = args.prefix
+    if args.prefix_file:
+        prefix = Path(args.prefix_file).read_text(encoding="utf-8")
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -108,7 +112,7 @@ def main() -> int:
         for bucket in buckets:
             for sample_idx in range(args.samples_per_bucket):
                 sample_id = f"tok{bucket}_s{sample_idx:03d}"
-                prompt_text = find_exact_prompt(tokenizer, bucket, args.prefix, sample_idx)
+                prompt_text = find_exact_prompt(tokenizer, bucket, prefix, sample_idx)
                 prompt_tokens = len(encode(tokenizer, prompt_text))
                 if prompt_tokens != bucket:
                     raise SystemExit(
