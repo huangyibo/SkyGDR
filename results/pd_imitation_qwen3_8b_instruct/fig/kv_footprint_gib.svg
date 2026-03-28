@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560">
+<rect width="960" height="560" fill="white"/>
+<text x="86" y="28" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700">Logical KV Footprint at gen=512</text>
+<line x1="86" y1="478.0" x2="932" y2="478.0" stroke="#e6e6e6" stroke-width="1"/>
+<text x="76" y="482.0" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">0.00</text>
+<line x1="86" y1="393.6" x2="932" y2="393.6" stroke="#e6e6e6" stroke-width="1"/>
+<text x="76" y="397.6" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">0.87</text>
+<line x1="86" y1="309.2" x2="932" y2="309.2" stroke="#e6e6e6" stroke-width="1"/>
+<text x="76" y="313.2" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">1.73</text>
+<line x1="86" y1="224.8" x2="932" y2="224.8" stroke="#e6e6e6" stroke-width="1"/>
+<text x="76" y="228.8" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">2.60</text>
+<line x1="86" y1="140.4" x2="932" y2="140.4" stroke="#e6e6e6" stroke-width="1"/>
+<text x="76" y="144.4" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">3.47</text>
+<line x1="86" y1="56.0" x2="932" y2="56.0" stroke="#e6e6e6" stroke-width="1"/>
+<text x="76" y="60.0" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">4.33</text>
+<line x1="86" y1="478" x2="932" y2="478" stroke="#222" stroke-width="1.5"/>
+<line x1="86" y1="56" x2="86" y2="478" stroke="#222" stroke-width="1.5"/>
+<rect x="112.8" y="450.6" width="87.4" height="27.4" fill="#4C78A8" rx="4"/>
+<text x="156.5" y="442.6" text-anchor="middle" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">0.28</text>
+<text x="156.5" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">2048</text>
+<rect x="253.8" y="423.2" width="87.4" height="54.8" fill="#4C78A8" rx="4"/>
+<text x="297.5" y="415.2" text-anchor="middle" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">0.56</text>
+<text x="297.5" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">4096</text>
+<rect x="394.8" y="368.4" width="87.4" height="109.6" fill="#4C78A8" rx="4"/>
+<text x="438.5" y="360.4" text-anchor="middle" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">1.12</text>
+<text x="438.5" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">8192</text>
+<rect x="535.8" y="258.8" width="87.4" height="219.2" fill="#4C78A8" rx="4"/>
+<text x="579.5" y="250.8" text-anchor="middle" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">2.25</text>
+<text x="579.5" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">16384</text>
+<rect x="676.8" y="149.2" width="87.4" height="328.8" fill="#4C78A8" rx="4"/>
+<text x="720.5" y="141.2" text-anchor="middle" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">3.38</text>
+<text x="720.5" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">24576</text>
+<rect x="817.8" y="94.4" width="87.4" height="383.6" fill="#E45756" rx="4"/>
+<text x="861.5" y="86.4" text-anchor="middle" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">3.94</text>
+<text x="861.5" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">28672</text>
+<text x="509.0" y="540" text-anchor="middle" font-size="16" fill="#222" font-family="Helvetica, Arial, sans-serif">Context Tokens</text>
+<text x="22" y="267.0" text-anchor="middle" font-size="16" fill="#222" font-family="Helvetica, Arial, sans-serif" transform="rotate(-90 22,267.0)">KV Footprint (GiB)</text>
+</svg>

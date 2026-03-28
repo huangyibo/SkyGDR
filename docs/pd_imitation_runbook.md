@@ -640,6 +640,7 @@ vllm serve $MODEL_PATH \
   --generation-config vllm \
   --kv-offloading-size 32 \
   --kv-offloading-backend native \
+  --disable-hybrid-kv-cache-manager \
   2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log
 ```
 
@@ -651,6 +652,8 @@ vllm serve $MODEL_PATH \
   - 对当前 `Qwen3-8B` + 长上下文 workload，这个值更容易让 CPU-GPU 间的 KV 搬运变得可观
 - `--kv-offloading-backend native`
   - 使用 vLLM 原生 CPU KV offloading
+- `--disable-hybrid-kv-cache-manager`
+  - 在 vLLM `0.18.x` 上，`OffloadingConnector` 与默认的 hybrid KV cache manager（HMA）不兼容；不加这一行会直接报：`Connector OffloadingConnector does not support HMA`
 
 这个实验适合回答：
 
@@ -697,12 +700,12 @@ python3 src/tools/pd_imitation_report.py \
 
 - `$BASELINE_RUN_ROOT/summary/pd_imitation_compare_report.md`
 - `$BASELINE_RUN_ROOT/fig/compare_prefill_latency.svg`
-- `$BASELINE_RUN_ROOT/fig/compare_decode_g256_mspt.svg`
+- `$BASELINE_RUN_ROOT/fig/compare_decode_g512_mspt.svg`（与第 11 节最大 `generated_tokens` 桶一致；若你改小 generation bucket，文件名会随报告脚本变化）
 
 这份对照报告的重点是：
 
 - baseline 和 native CPU offloading 的 prefill latency 是否出现分叉
-- 当前最大 generation bucket 这个更接近 steady-state 的 decode proxy 在不同 context 下是否明显变差
+- 当前最大 generation bucket（本手册为 `g=512`）这个更接近 steady-state 的 decode proxy 在不同 context 下是否明显变差
 
 ## 14. 最低验收标准
 
