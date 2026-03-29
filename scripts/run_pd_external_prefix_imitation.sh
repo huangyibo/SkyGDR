@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Single entrypoint for the restore-focused imitation workflow.
+# Single entrypoint for the external prefix-cache imitation workflow.
 set -euo pipefail
 
-LOG="${1:-$HOME/SkyGDR/results/pd_restore_imitation_run.log}"
+LOG="${1:-$HOME/SkyGDR/results/pd_external_prefix_imitation_run.log}"
 exec > >(tee -a "$LOG") 2>&1
 
 export ROOT="${ROOT:-$HOME/SkyGDR}"
-export RUN_ROOT="${RUN_ROOT:-$ROOT/results/pd_restore_imitation_qwen3_8b}"
+export RUN_ROOT="${RUN_ROOT:-$ROOT/results/pd_external_prefix_imitation_qwen3_8b}"
 export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-8B}"
 export SERVED_MODEL="${SERVED_MODEL:-Qwen3-8B-Instruct}"
 export API_BASE="${API_BASE:-http://127.0.0.1:8000}"
@@ -15,21 +15,25 @@ export DATA_ROOT="${DATA_ROOT:-/data/danyang}"
 export VENV_PATH="${VENV_PATH:-$DATA_ROOT/venvs/vllm}"
 export GPU_INDEX="${GPU_INDEX:-0}"
 export GPU_METRICS_INTERVAL_MS="${GPU_METRICS_INTERVAL_MS:-20}"
-export MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
-export OFFLOAD_SIZE_GIB="${OFFLOAD_SIZE_GIB:-32}"
-export GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.70}"
+export GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
 
-export BASE_PREFIX_TOKENS="${BASE_PREFIX_TOKENS:-24576}"
-export APPEND_TOKENS="${APPEND_TOKENS:-256,256,256,256,256,256}"
+export SEED_PROMPT_TOKENS="${SEED_PROMPT_TOKENS:-24832}"
+export APPEND_TOKENS="${APPEND_TOKENS:-256,256,256,256,256}"
 export NUM_TURNS="${NUM_TURNS:-6}"
-export MAIN_DECODE_TOKENS="${MAIN_DECODE_TOKENS:-32}"
-export PRESSURE_PROMPT_TOKENS="${PRESSURE_PROMPT_TOKENS:-28672}"
-export PRESSURE_BURST_SIZE="${PRESSURE_BURST_SIZE:-8}"
-export PRESSURE_ROUNDS_PER_TURN="${PRESSURE_ROUNDS_PER_TURN:-2}"
-export PRESSURE_DECODE_TOKENS="${PRESSURE_DECODE_TOKENS:-1}"
-export SLEEP_BETWEEN_GROUPS_MS="${SLEEP_BETWEEN_GROUPS_MS:-250}"
+export DECODE_TOKENS="${DECODE_TOKENS:-16}"
+export POST_REQUEST_SETTLE_MS="${POST_REQUEST_SETTLE_MS:-1200}"
+export SLEEP_BETWEEN_REQUESTS_MS="${SLEEP_BETWEEN_REQUESTS_MS:-250}"
 
-mkdir -p "$RUN_ROOT"/{logs,data,summary}
+export LMCACHE_CHUNK_SIZE="${LMCACHE_CHUNK_SIZE:-256}"
+export LMCACHE_LOCAL_CPU="${LMCACHE_LOCAL_CPU:-false}"
+export LMCACHE_REMOTE_URL="${LMCACHE_REMOTE_URL:-}"
+export MOCK_STORAGE_GB="${MOCK_STORAGE_GB:-256}"
+export MOCK_PEEKING_LATENCY_MS="${MOCK_PEEKING_LATENCY_MS:-1}"
+export MOCK_READ_GBPS="${MOCK_READ_GBPS:-40}"
+export MOCK_WRITE_GBPS="${MOCK_WRITE_GBPS:-8}"
+
+mkdir -p "$RUN_ROOT"/{logs,data,summary,tmp}
+mkdir -p "$RUN_ROOT/tmp/prometheus"
 cd "$ROOT"
 source "$VENV_PATH/bin/activate"
 
@@ -38,7 +42,7 @@ stop_all_vllm() {
   pkill -f "vllm serve" >/dev/null 2>&1 || true
   sleep 5
   pkill -9 -f "VLLM::EngineCore" >/dev/null 2>&1 || true
-  sleep 25
+  sleep 20
 }
 
 wait_health() {
@@ -74,27 +78,39 @@ stop_metrics_logger() {
   fi
 }
 
+if [[ -z "$LMCACHE_REMOTE_URL" ]]; then
+  export LMCACHE_REMOTE_URL="mock://${MOCK_STORAGE_GB}/?peeking_latency=${MOCK_PEEKING_LATENCY_MS}&read_throughput=${MOCK_READ_GBPS}&write_throughput=${MOCK_WRITE_GBPS}"
+fi
+
 cat > "$RUN_ROOT/data/session_prefix.txt" <<'EOF'
-System: You are helping a long-running coding agent that repeatedly inspects files, executes commands, and asks for clarification while working through a complex systems task.
+System: You are helping a long-running coding agent that repeatedly inspects files, executes commands, reads large tool outputs, and accumulates context across many turns.
 
-User: Please keep all previous context because the next tool outputs will depend on it.
-Assistant: Understood. I will preserve the full history and only add the new observations from each turn.
+User: The next several turns will append only a very small amount of new information, but the full prior context must remain available for reasoning.
+Assistant: Understood. I will preserve the full history and treat each turn as an extension of the same session.
 
-User: The session will be long and most of the context will repeat. Only a small amount of new information will be appended each round.
-Assistant: Then the natural target is a high-reuse workload where most prefix KV can be reused across turns.
+User: We care specifically about external prefix-cache behavior. Most previous tokens should be reused from shared storage, and only the tiny newly appended suffix should require fresh prefill computation.
+Assistant:
 EOF
 
-cat > "$RUN_ROOT/data/pressure_prefix.txt" <<'EOF'
-System: You are processing a large unrelated debugging transcript with extensive terminal output, code snippets, and stack traces.
-
-User: This request is intentionally long and independent of the main session so that it competes for prefix-cache residency and creates eviction pressure.
-Assistant:
+cat > "$RUN_ROOT/data/lmcache_config.yaml" <<EOF
+chunk_size: ${LMCACHE_CHUNK_SIZE}
+local_cpu: ${LMCACHE_LOCAL_CPU}
+max_local_cpu_size: 0
+remote_url: "${LMCACHE_REMOTE_URL}"
+remote_serde: "naive"
+save_decode_cache: false
+save_unfull_chunk: false
 EOF
 
 echo "========== CLEAN GPU =========="
 stop_all_vllm
+rm -rf "$RUN_ROOT/tmp/prometheus"
+mkdir -p "$RUN_ROOT/tmp/prometheus"
 
-echo "========== START VLLM =========="
+echo "========== START VLLM + LMCACHE =========="
+PYTHONHASHSEED=0 \
+PROMETHEUS_MULTIPROC_DIR="$RUN_ROOT/tmp/prometheus" \
+LMCACHE_CONFIG_FILE="$RUN_ROOT/data/lmcache_config.yaml" \
 vllm serve "$MODEL_PATH" \
   --served-model-name "$SERVED_MODEL" \
   --host 127.0.0.1 \
@@ -102,13 +118,12 @@ vllm serve "$MODEL_PATH" \
   --dtype bfloat16 \
   --max-model-len 32768 \
   --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
-  --max-num-seqs "$MAX_NUM_SEQS" \
+  --max-num-seqs 1 \
   --generation-config vllm \
-  --enable-prefix-caching \
-  --kv-offloading-size "$OFFLOAD_SIZE_GIB" \
-  --kv-offloading-backend native \
-  --disable-hybrid-kv-cache-manager \
-  2>&1 | tee "$RUN_ROOT/logs/vllm_restore_imitation.log" &
+  --no-enable-prefix-caching \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}' \
+  --disable-log-requests \
+  2>&1 | tee "$RUN_ROOT/logs/vllm_external_prefix.log" &
 wait_health
 trap 'stop_metrics_logger; stop_all_vllm' EXIT
 
@@ -116,27 +131,24 @@ echo "========== START METRICS LOGGER =========="
 start_metrics_logger
 
 echo "========== BUILD WORKLOAD =========="
-python3 src/tools/pd_build_trajectory_workload.py \
+python3 src/tools/pd_build_external_prefix_workload.py \
   --model_or_tokenizer "$MODEL_PATH" \
-  --base_prefix_tokens "$BASE_PREFIX_TOKENS" \
+  --seed_prompt_tokens "$SEED_PROMPT_TOKENS" \
   --append_tokens "$APPEND_TOKENS" \
   --num_turns "$NUM_TURNS" \
-  --main_decode_tokens "$MAIN_DECODE_TOKENS" \
-  --pressure_prompt_tokens "$PRESSURE_PROMPT_TOKENS" \
-  --pressure_burst_size "$PRESSURE_BURST_SIZE" \
-  --pressure_rounds_per_turn "$PRESSURE_ROUNDS_PER_TURN" \
-  --pressure_decode_tokens "$PRESSURE_DECODE_TOKENS" \
+  --decode_tokens "$DECODE_TOKENS" \
   --max_prompt_tokens 32768 \
+  --chunk_size_tokens "$LMCACHE_CHUNK_SIZE" \
   --session_prefix_file "$RUN_ROOT/data/session_prefix.txt" \
-  --pressure_prefix_file "$RUN_ROOT/data/pressure_prefix.txt" \
   --out "$RUN_ROOT/data/trajectory_workload.jsonl"
 
 echo "========== RUN WORKLOAD =========="
-python3 src/tools/pd_run_restore_workload.py \
+python3 src/tools/pd_run_external_prefix_workload.py \
   --api_base "$API_BASE" \
   --model "$SERVED_MODEL" \
   --input_jsonl "$RUN_ROOT/data/trajectory_workload.jsonl" \
-  --sleep_between_groups_ms "$SLEEP_BETWEEN_GROUPS_MS" \
+  --post_request_settle_ms "$POST_REQUEST_SETTLE_MS" \
+  --sleep_between_requests_ms "$SLEEP_BETWEEN_REQUESTS_MS" \
   --ignore_eos \
   --out_csv "$RUN_ROOT/data/trajectory_samples.csv"
 

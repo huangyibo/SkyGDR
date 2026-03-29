@@ -10,9 +10,8 @@ from collections import defaultdict
 
 
 PHASE_COLORS = {
-    "warmup": "#4C78A8",
-    "pressure": "#E45756",
-    "reuse": "#54A24B",
+    "seed": "#4C78A8",
+    "reuse": "#F58518",
 }
 
 
@@ -78,7 +77,6 @@ def load_requests(path: str) -> list[dict]:
         out.append(
             {
                 "request_id": r["request_id"],
-                "launch_group": to_int(r["launch_group"]),
                 "phase": r["phase"],
                 "session_id": r["session_id"],
                 "turn_id": to_int(r["turn_id"]),
@@ -86,13 +84,24 @@ def load_requests(path: str) -> list[dict]:
                 "reused_prefix_tokens_est": to_int(r["reused_prefix_tokens_est"]),
                 "appended_tokens_est": to_int(r["appended_tokens_est"]),
                 "reuse_ratio_est": to_float(r["reuse_ratio_est"]),
-                "expected_restore": to_int(r["expected_restore"]),
+                "expected_external_hit": to_int(r["expected_external_hit"]),
                 "max_tokens": to_int(r["max_tokens"]),
                 "submit_ts_unix_ms": to_int(r["submit_ts_unix_ms"]),
-                "finish_ts_unix_ms": to_int(r["finish_ts_unix_ms"]),
+                "response_finish_ts_unix_ms": to_int(r["response_finish_ts_unix_ms"]),
+                "post_metrics_ts_unix_ms": to_int(r["post_metrics_ts_unix_ms"]),
                 "elapsed_ms": to_float(r["elapsed_ms"]),
                 "usage_prompt_tokens": to_int(r["usage_prompt_tokens"], default=-1),
                 "usage_completion_tokens": to_int(r["usage_completion_tokens"], default=-1),
+                "lmcache_requested_tokens": to_int(r.get("lmcache_requested_tokens"), default=-1),
+                "lmcache_hit_tokens": to_int(r.get("lmcache_hit_tokens"), default=-1),
+                "lmcache_vllm_hit_tokens": to_int(r.get("lmcache_vllm_hit_tokens"), default=-1),
+                "lmcache_remote_read_bytes": to_int(r.get("lmcache_remote_read_bytes"), default=-1),
+                "lmcache_remote_write_bytes": to_int(r.get("lmcache_remote_write_bytes"), default=-1),
+                "lmcache_remote_read_requests": to_int(r.get("lmcache_remote_read_requests"), default=-1),
+                "lmcache_remote_write_requests": to_int(r.get("lmcache_remote_write_requests"), default=-1),
+                "lmcache_hit_ratio": to_float(r.get("lmcache_hit_ratio"), default=0.0),
+                "lmcache_remote_read_GiB": to_float(r.get("lmcache_remote_read_GiB"), default=0.0),
+                "lmcache_remote_write_GiB": to_float(r.get("lmcache_remote_write_GiB"), default=0.0),
             }
         )
     if not out:
@@ -100,37 +109,28 @@ def load_requests(path: str) -> list[dict]:
     return out
 
 
-def load_windows(requests: list[dict]) -> dict:
+def load_windows(requests: list[dict]) -> dict[str, int]:
     return {
         "window_start_unix_ms": min(r["submit_ts_unix_ms"] for r in requests),
-        "window_end_unix_ms": max(r["finish_ts_unix_ms"] for r in requests),
+        "window_end_unix_ms": max(r["post_metrics_ts_unix_ms"] for r in requests),
     }
 
 
-def build_group_spans(requests: list[dict]) -> list[dict]:
-    groups: dict[int, list[dict]] = defaultdict(list)
-    for r in requests:
-        groups[r["launch_group"]].append(r)
-    spans = []
-    for launch_group in sorted(groups):
-        rows = groups[launch_group]
-        spans.append(
-            {
-                "launch_group": launch_group,
-                "phase": rows[0]["phase"],
-                "start_unix_ms": min(r["submit_ts_unix_ms"] for r in rows),
-                "end_unix_ms": max(r["finish_ts_unix_ms"] for r in rows),
-                "request_count": len(rows),
-            }
-        )
-    return spans
+def build_request_spans(requests: list[dict]) -> list[dict]:
+    return [
+        {
+            "request_id": r["request_id"],
+            "phase": r["phase"],
+            "turn_id": r["turn_id"],
+            "start_unix_ms": r["submit_ts_unix_ms"],
+            "end_unix_ms": r["post_metrics_ts_unix_ms"],
+        }
+        for r in requests
+    ]
 
 
 def select_rows(rows: list[dict], start_ms: int, end_ms: int) -> list[dict]:
-    out = [r for r in rows if r["ts_unix_ms"] >= start_ms and r["ts_unix_ms"] <= end_ms]
-    if len(out) >= 2:
-        return out
-    return []
+    return [r for r in rows if start_ms <= r["ts_unix_ms"] <= end_ms]
 
 
 def summarize_single_interval(rows: list[dict], start_ms: int, end_ms: int) -> dict:
@@ -225,11 +225,6 @@ def build_main_svg(rows: list[dict], spans: list[dict], windows: dict[str, int],
     def x_fn(x: float) -> float:
         return margin_left + (x / max_t) * plot_w
 
-    def y_fn_factory(top: float, max_y: float):
-        def y_fn(y: float) -> float:
-            return top + panel_h - (y / max_y) * panel_h if max_y > 0 else top + panel_h
-        return y_fn
-
     panels = [
         ("pcie_total_GiB_s", "Total GiB/s", max_total, "#54A24B"),
         ("pcie_tx_GiB_s", "TX GiB/s", max_tx, "#4C78A8"),
@@ -258,6 +253,7 @@ def build_main_svg(rows: list[dict], spans: list[dict], windows: dict[str, int],
         parts.append(
             f'<text x="24" y="{top + panel_h/2:.1f}" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif" transform="rotate(-90 24,{top + panel_h/2:.1f})">{escape_xml(ylabel)}</text>'
         )
+
         for span in spans:
             x1 = x_fn((span["start_unix_ms"] - base_ts) / 1000.0)
             x2 = x_fn((span["end_unix_ms"] - base_ts) / 1000.0)
@@ -281,8 +277,8 @@ def build_main_svg(rows: list[dict], spans: list[dict], windows: dict[str, int],
 
     legend_x = width - 250
     legend_y = 44
-    legend_items = [("warmup", PHASE_COLORS["warmup"]), ("pressure", PHASE_COLORS["pressure"]), ("reuse", PHASE_COLORS["reuse"])]
-    parts.append(f'<rect x="{legend_x}" y="{legend_y}" width="220" height="92" rx="8" fill="#fff" stroke="#ddd"/>')
+    legend_items = [("seed", PHASE_COLORS["seed"]), ("reuse", PHASE_COLORS["reuse"])]
+    parts.append(f'<rect x="{legend_x}" y="{legend_y}" width="220" height="70" rx="8" fill="#fff" stroke="#ddd"/>')
     for idx, (label, color) in enumerate(legend_items):
         yy = legend_y + 22 + idx * 22
         parts.append(f'<rect x="{legend_x + 12}" y="{yy - 8}" width="16" height="12" fill="{color}" opacity="0.35"/>')
@@ -388,7 +384,7 @@ def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int
             active_phases = [
                 span["phase"]
                 for span in spans
-                if r["ts_unix_ms"] >= span["start_unix_ms"] and r["ts_unix_ms"] <= span["end_unix_ms"]
+                if span["start_unix_ms"] <= r["ts_unix_ms"] <= span["end_unix_ms"]
             ]
             phase = "+".join(sorted(set(active_phases))) if active_phases else "idle"
             w.writerow([
@@ -419,13 +415,20 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
             "phase",
             "session_id",
             "turn_id",
-            "launch_group",
             "prompt_tokens",
             "reused_prefix_tokens_est",
             "appended_tokens_est",
             "reuse_ratio_est",
-            "expected_restore",
+            "expected_external_hit",
             "elapsed_ms",
+            "usage_prompt_tokens",
+            "usage_completion_tokens",
+            "lmcache_requested_tokens",
+            "lmcache_hit_tokens",
+            "lmcache_vllm_hit_tokens",
+            "lmcache_hit_ratio",
+            "lmcache_remote_read_GiB",
+            "lmcache_remote_write_GiB",
             "tx_total_GiB",
             "rx_total_GiB",
             "total_transfer_GiB",
@@ -434,7 +437,7 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
             "peak_total_GiB_s",
         ])
         for r in requests:
-            st = summarize_single_interval(metrics_rows, r["submit_ts_unix_ms"], r["finish_ts_unix_ms"])
+            st = summarize_single_interval(metrics_rows, r["submit_ts_unix_ms"], r["post_metrics_ts_unix_ms"])
             if not st:
                 continue
             w.writerow([
@@ -442,13 +445,20 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
                 r["phase"],
                 r["session_id"],
                 r["turn_id"],
-                r["launch_group"],
                 r["prompt_tokens"],
                 r["reused_prefix_tokens_est"],
                 r["appended_tokens_est"],
                 f"{r['reuse_ratio_est']:.6f}",
-                r["expected_restore"],
+                r["expected_external_hit"],
                 f"{r['elapsed_ms']:.6f}",
+                r["usage_prompt_tokens"],
+                r["usage_completion_tokens"],
+                r["lmcache_requested_tokens"],
+                r["lmcache_hit_tokens"],
+                r["lmcache_vllm_hit_tokens"],
+                f"{r['lmcache_hit_ratio']:.6f}",
+                f"{r['lmcache_remote_read_GiB']:.6f}",
+                f"{r['lmcache_remote_write_GiB']:.6f}",
                 f"{st['tx_total_GiB']:.6f}",
                 f"{st['rx_total_GiB']:.6f}",
                 f"{st['total_transfer_GiB']:.6f}",
@@ -476,19 +486,18 @@ def write_summary_md(
     rel_req = os.path.relpath(request_summary_csv, os.path.dirname(out_md))
 
     lines = []
-    lines.append(f"# Prefill-Restore PCIe Report: {run_label}")
+    lines.append(f"# External Prefix-Cache PCIe Report: {run_label}")
     lines.append("")
     lines.append("## 1. 观测范围")
     lines.append("")
     lines.append(f"- full window start: `{windows['window_start_unix_ms']}`")
     lines.append(f"- full window end: `{windows['window_end_unix_ms']}`")
-    lines.append(f"- launch groups: `{len(spans)}`")
+    lines.append(f"- requests: `{len(spans)}`")
     lines.append("")
     lines.append("本报告针对的是：")
     lines.append("")
-    lines.append("- `warmup`：先把主 trajectory 的 prefix cache 建起来")
-    lines.append("- `pressure`：插入长请求 burst，强制制造 eviction 压力")
-    lines.append("- `reuse`：提交下一轮高复用请求，观察 prefill restore 是否拉高 RX/H2D")
+    lines.append("- `seed`：首轮长 prompt，把完整前缀写入 external/shared prefix cache")
+    lines.append("- `reuse`：后续各轮只追加少量新 token，观察 prefill 是否从外部 cache 读回大部分历史 KV")
     lines.append("")
     lines.append("## 2. 时序图")
     lines.append("")
@@ -517,14 +526,14 @@ def write_summary_md(
     lines.append("")
     lines.append("## 4. 分阶段统计")
     lines.append("")
-    lines.append("| phase | duration (s) | tx total (GiB) | rx total (GiB) | total (GiB) | avg tx GiB/s | avg rx GiB/s | avg total GiB/s | peak tx GiB/s | peak rx GiB/s |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
-    for phase in ["warmup", "pressure", "reuse"]:
+    lines.append("| phase | duration (s) | tx total (GiB) | rx total (GiB) | total (GiB) | avg tx GiB/s | avg rx GiB/s | peak tx GiB/s | peak rx GiB/s |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for phase in ["seed", "reuse"]:
         st = phase_stats.get(phase) or {}
         if not st:
             continue
         lines.append(
-            f"| {phase} | {st['duration_s']:.3f} | {st['tx_total_GiB']:.3f} | {st['rx_total_GiB']:.3f} | {st['total_transfer_GiB']:.3f} | {st['avg_tx_GiB_s']:.3f} | {st['avg_rx_GiB_s']:.3f} | {st['avg_total_GiB_s']:.3f} | {st['peak_tx_GiB_s']:.3f} | {st['peak_rx_GiB_s']:.3f} |"
+            f"| {phase} | {st['duration_s']:.3f} | {st['tx_total_GiB']:.3f} | {st['rx_total_GiB']:.3f} | {st['total_transfer_GiB']:.3f} | {st['avg_tx_GiB_s']:.3f} | {st['avg_rx_GiB_s']:.3f} | {st['peak_tx_GiB_s']:.3f} | {st['peak_rx_GiB_s']:.3f} |"
         )
     lines.append("")
     lines.append("## 5. 请求级汇总")
@@ -533,19 +542,19 @@ def write_summary_md(
     lines.append("")
     lines.append("重点建议：")
     lines.append("")
-    lines.append("- 看 `reuse` 请求的 `peak_rx_GiB_s` 和 `rx_total_GiB`，这是最直接的 restore 候选信号。")
-    lines.append("- 看 `pressure` 请求的 `peak_tx_GiB_s` 和 `tx_total_GiB`，这是 eviction 压力是否真的打起来的主指标。")
-    lines.append("- 如果 `reuse` 阶段 RX 仍然低，通常意味着历史 prefix 还留在 GPU，或者 restore 被更细粒度地摊平了。")
+    lines.append("- 看 `reuse` 请求的 `lmcache_remote_read_GiB` 和 `peak_rx_GiB_s`，这是最直接的 external prefix-cache prefill load 信号。")
+    lines.append("- 看 `seed` 请求的 `lmcache_remote_write_GiB` 和 `peak_tx_GiB_s`，它反映首轮长前缀是怎么被写入外部 cache 的。")
+    lines.append("- 如果 `lmcache_hit_ratio` 很高但 `peak_rx_GiB_s` 不高，通常意味着外部读回被更平滑地摊开了，而不是没有命中。")
     lines.append("")
     with open(out_md, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
 def parse_args():
-    ap = argparse.ArgumentParser(description="Analyze PCIe metrics for the restore-focused trajectory workload.")
+    ap = argparse.ArgumentParser(description="Analyze PCIe metrics for the external prefix-cache imitation workload.")
     ap.add_argument("--metrics_csv", required=True)
     ap.add_argument("--request_csv", required=True)
-    ap.add_argument("--run_label", default="restore_run")
+    ap.add_argument("--run_label", default="external_prefix_run")
     ap.add_argument("--out_svg", required=True)
     ap.add_argument("--out_md", required=True)
     ap.add_argument("--out_csv", required=True)
@@ -558,10 +567,10 @@ def main() -> int:
     metrics_rows = load_metrics(args.metrics_csv)
     requests = load_requests(args.request_csv)
     windows = load_windows(requests)
-    spans = build_group_spans(requests)
+    spans = build_request_spans(requests)
     selected_rows = [
         r for r in metrics_rows
-        if r["ts_unix_ms"] >= windows["window_start_unix_ms"] and r["ts_unix_ms"] <= windows["window_end_unix_ms"]
+        if windows["window_start_unix_ms"] <= r["ts_unix_ms"] <= windows["window_end_unix_ms"]
     ]
     if not selected_rows:
         raise SystemExit("no metrics rows overlap with request window")
@@ -594,7 +603,7 @@ def main() -> int:
                     "windows": windows,
                     "full": full_stats,
                     "phases": phase_stats,
-                    "launch_groups": spans,
+                    "requests": spans,
                     "request_summary_csv": request_summary_csv,
                 },
                 f,

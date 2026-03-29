@@ -1,4 +1,4 @@
-# Prefill-Restore Imitation 代码说明
+# External Prefix-Cache Imitation 代码说明
 
 这份文档解释当前仓库里与 `PD imitation` 相关的**新主线代码**。
 
@@ -6,43 +6,45 @@
 
 - `prefill-only`
 - `decode-only`
-- `logical trace`
-
-流程。
+- `native offloading + pressure burst`
+- `prefill-restore` 主流程
 
 现在的唯一目标是：
 
-- 模拟 **长 session / 高 prefix reuse / 中间有 eviction pressure**
-- 观察下一轮 `reuse turn` 的 prefill 是否出现明显的 **RX/H2D restore**
+- 模拟 **长 session / 高 prefix reuse / 外部 prefix cache 命中**
+- 让 `reuse` turn 主要从 external/shared cache 读回历史 KV
+- 同时观测：
+  - `LMCache hit / remote read / remote write`
+  - `PCIe RX / TX`
 
 ## 1. 新主线的整体结构
 
 新的链路分成 5 个模块：
 
 1. workload 生成
-2. workload 执行
+2. workload 执行与 LMCache 指标采样
 3. GPU/PCIe 指标采样
 4. PCIe 分析
 5. 汇总报告
 
 对应文件是：
 
-- [pd_build_trajectory_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_trajectory_workload.py)
-- [pd_run_restore_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_restore_workload.py)
+- [pd_build_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_external_prefix_workload.py)
+- [pd_run_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_external_prefix_workload.py)
 - [gpu_metrics_logger.py](/Users/daniel/Documents/code/SkyGDR/src/tools/gpu_metrics_logger.py)
 - [pd_pcie_offload_analyze.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_pcie_offload_analyze.py)
 - [pd_imitation_report.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_imitation_report.py)
-- [run_pd_restore_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_restore_imitation.sh)
+- [run_pd_external_prefix_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_external_prefix_imitation.sh)
 
 ## 2. 端到端数据流
 
 新链路的数据流是：
 
 ```text
-session_prefix.txt + pressure_prefix.txt
-  -> pd_build_trajectory_workload.py
+session_prefix.txt
+  -> pd_build_external_prefix_workload.py
   -> trajectory_workload.jsonl
-  -> pd_run_restore_workload.py
+  -> pd_run_external_prefix_workload.py
   -> trajectory_samples.csv
   + gpu_metrics_logger.py
   -> gpu_metrics.csv
@@ -55,21 +57,21 @@ session_prefix.txt + pressure_prefix.txt
 
 ## 3. 各文件职责
 
-## 3.1 `pd_build_trajectory_workload.py`
+## 3.1 `pd_build_external_prefix_workload.py`
 
 路径：
 
-- [pd_build_trajectory_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_trajectory_workload.py)
+- [pd_build_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_external_prefix_workload.py)
 
 职责：
 
-- 生成“主 session + pressure burst”的完整请求日程
+- 生成一个只有 `seed + reuse` 的多轮长 session workload
 
-它不再生成独立 token bucket，而是生成按顺序执行的 workload：
+它不再生成：
 
-- `warmup`
-- `pressure`
-- `reuse`
+- 独立 token bucket
+- pressure burst
+- eviction-heavy 干扰请求
 
 ### 它输出什么
 
@@ -80,7 +82,6 @@ session_prefix.txt + pressure_prefix.txt
 每条记录至少包含：
 
 - `request_id`
-- `launch_group`
 - `phase`
 - `session_id`
 - `turn_id`
@@ -88,54 +89,70 @@ session_prefix.txt + pressure_prefix.txt
 - `reused_prefix_tokens_est`
 - `appended_tokens_est`
 - `reuse_ratio_est`
-- `expected_restore`
+- `expected_external_hit`
 - `max_tokens`
 - `prompt_text`
 
-### 它怎么构造主 session
+### 它怎么保证高复用
 
-主 session 的 prompt 是严格递增的：
+这份脚本不再拼接一堆独立 block。
 
-- `turn_0 = base_prefix + append_0`
-- `turn_1 = turn_0 + append_1`
-- `turn_2 = turn_1 + append_2`
+它现在是：
 
-这样保证：
-
-- 下一轮 prompt 以前一轮 prompt 为严格前缀
-- prefix caching 可以直接复用旧前缀
-
-### 它怎么构造 pressure burst
-
-每个后续主 turn 之前，脚本会先插入若干个无关长请求：
-
-- `pressure_rounds_per_turn`
-- `pressure_burst_size`
-
-这些请求的目标不是“算业务结果”，而是：
-
-- 占据 prefix cache 和 KV 空间
-- 强制制造 eviction 压力
-
-## 3.2 `pd_run_restore_workload.py`
-
-路径：
-
-- [pd_run_restore_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_restore_workload.py)
-
-职责：
-
-- 按 workload JSONL 的顺序执行请求
-
-它的执行规则是：
-
-- 相同 `launch_group` 的请求并发发出
-- 不同 `launch_group` 按顺序推进
+- 先生成一段足够长的 token corpus
+- 再取这个 corpus 的不同长度前缀
 
 所以：
 
-- `pressure` burst 内部可以并发
-- `warmup -> pressure -> reuse` 之间保持顺序
+- `turn_0` 是长前缀
+- `turn_1` 是 `turn_0` 的严格扩展
+- `turn_2` 是 `turn_1` 的严格扩展
+
+这样天然满足：
+
+- 后一轮 prompt 以前一轮 prompt 为前缀
+
+### 为什么要做 chunk 对齐
+
+脚本会要求：
+
+- 每轮总 prompt token 数对齐到 `chunk_size_tokens`
+
+默认是 `256`。
+
+这样做是为了：
+
+- 让 LMCache 命中尽量落在完整 chunk 上
+- 最大化 `reuse turn` 的 external cache hit
+
+## 3.2 `pd_run_external_prefix_workload.py`
+
+路径：
+
+- [pd_run_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_external_prefix_workload.py)
+
+职责：
+
+- 顺序执行 workload
+- 在每轮请求前后抓一次 `/metrics`
+- 用 counter 差分把 LMCache 的远端读写归因到这轮请求
+
+### 它和旧 runner 的本质区别
+
+旧 runner 只负责：
+
+- 发请求
+- 记延迟
+
+新 runner 额外负责：
+
+- 抓 `LMCache` 指标
+- 把每轮请求对应的：
+  - `requested tokens`
+  - `hit tokens`
+  - `remote read bytes`
+  - `remote write bytes`
+  记下来
 
 ### 它输出什么
 
@@ -145,23 +162,36 @@ session_prefix.txt + pressure_prefix.txt
 
 关键字段包括：
 
-- `request_id`
-- `launch_group`
-- `phase`
-- `session_id`
-- `turn_id`
-- `prompt_tokens`
-- `reused_prefix_tokens_est`
-- `reuse_ratio_est`
 - `submit_ts_unix_ms`
-- `finish_ts_unix_ms`
+- `response_finish_ts_unix_ms`
+- `post_metrics_ts_unix_ms`
 - `elapsed_ms`
 - `usage_prompt_tokens`
 - `usage_completion_tokens`
-- `http_status`
-- `error`
+- `lmcache_requested_tokens`
+- `lmcache_hit_tokens`
+- `lmcache_hit_ratio`
+- `lmcache_remote_read_GiB`
+- `lmcache_remote_write_GiB`
 
-这个 CSV 是后面 PCIe 对齐的主时间轴。
+### 为什么有 `post_metrics_ts_unix_ms`
+
+这一步很关键。
+
+因为 LMCache 的写回不一定在 response 返回的那个瞬间就完全结束。
+
+所以脚本会：
+
+1. 请求返回
+2. 再等一个 `post_request_settle_ms`
+3. 再抓一次 `/metrics`
+
+这样：
+
+- `seed` 阶段的远端写
+- `reuse` 阶段的小量 suffix 写
+
+都会更完整地计入当前请求。
 
 ## 3.3 `gpu_metrics_logger.py`
 
@@ -181,13 +211,16 @@ session_prefix.txt + pressure_prefix.txt
 - `pcie_tx_cum_GiB`
 - `pcie_rx_cum_GiB`
 - `pcie_total_cum_GiB`
-- `pcie_link_ref_GiB_s`
 
-这几个字段里：
+这里：
 
-- `TX` 更接近 eviction / 写出压力
-- `RX` 更接近 restore / 拉回压力
-- `total = tx + rx` 只适合看总体流量，不适合替代方向分析
+- `RX` 更接近 external cache 读回到 GPU
+- `TX` 更接近写出/落盘到 external cache
+
+所以现在的主解释方向是：
+
+- `seed` 看 `TX`
+- `reuse` 看 `RX`
 
 ## 3.4 `pd_pcie_offload_analyze.py`
 
@@ -199,17 +232,14 @@ session_prefix.txt + pressure_prefix.txt
 
 - 把 GPU metrics 和请求时间轴对齐
 - 输出总图、TX 图、RX 图
-- 输出请求级的 PCIe 汇总
+- 输出请求级 PCIe 汇总
 
 ### 它现在的输入
 
 - `metrics_csv`
 - `request_csv`
 
-这里已经不再接受旧的：
-
-- `prefill_csv`
-- `decode_csv`
+这里的 `request_csv` 现在已经包含 LMCache 请求级指标。
 
 ### 它现在的输出
 
@@ -223,21 +253,22 @@ session_prefix.txt + pressure_prefix.txt
 
 ### 它为什么更适合新主线
 
-因为它现在是围绕 phase 来分析：
+因为它现在围绕的是：
 
-- `warmup`
-- `pressure`
+- `seed`
 - `reuse`
 
-而不是围绕旧的：
+而且 `request_pcie_summary.csv` 已经把：
 
-- `prefill`
-- `decode`
+- LMCache 远端读写
+- PCIe 请求级读写
 
-所以它更直接地回答：
+合并到一张表里。
 
-- `pressure` 阶段有没有把 TX 打起来
-- `reuse` 阶段有没有把 RX 打起来
+这让我们可以直接回答：
+
+- 这轮 reuse 到底从 external cache 读了多少
+- 同一轮里 GPU RX/TX 又是什么样子
 
 ## 3.5 `pd_imitation_report.py`
 
@@ -253,101 +284,84 @@ session_prefix.txt + pressure_prefix.txt
 
 - bucket latency
 - logical trace
+- pressure/offload 对照
 
 而是：
 
-- `reuse ratio`
-- `reuse peak RX`
-- `pressure peak TX`
-- phase-level PCIe 统计
+- `mean LMCache hit ratio`
+- `total reuse remote read GiB`
+- `mean reuse peak RX`
+- `seed remote write`
 
-### 当前最重要的输出
+所以它回答的问题是：
 
-- `pd_imitation_report.md`
+- external prefix-cache hit 有没有真的发生
+- 它是不是伴随着明显的 H2D / RX
 
-这份报告的重点是帮助你快速判断：
-
-- 这轮是不是已经接近你想要的“prefill restore 主导”形态
-
-## 3.6 `run_pd_restore_imitation.sh`
+## 3.6 `run_pd_external_prefix_imitation.sh`
 
 路径：
 
-- [run_pd_restore_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_restore_imitation.sh)
+- [run_pd_external_prefix_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_external_prefix_imitation.sh)
 
 职责：
 
-- 新主线的唯一 shell 入口
+- 把整个 external prefix-cache imitation 从头串起来
 
-它负责：
+它大致会做这些事：
 
 1. 清理旧 `vllm`
-2. 启 `vllm serve`
-3. 开 `prefix caching + native offloading`
-4. 启 `gpu_metrics_logger.py`
-5. 生成 workload
-6. 执行 workload
-7. 分析 PCIe
-8. 生成最终报告
+2. 生成 `lmcache_config.yaml`
+3. 启动 `vllm + LMCacheConnectorV1`
+4. 关闭 vLLM 自己的 prefix caching
+5. 启动 `gpu_metrics_logger.py`
+6. 生成高复用 workload
+7. 顺序执行每轮请求并采集 LMCache 计数器差分
+8. 生成 PCIe 图和最终摘要
 
-它现在已经替代了旧的：
+### 为什么主脚本默认用 mock backend
 
-- `run_pd_imitation_full.sh`
-- `run_pd_imitation_offload_only.sh`
+默认使用：
 
-## 4. 为什么旧文件被删掉了
+- `mock://...`
 
-下面这些文件已经不再属于新主线，所以被移除了：
+是因为这条线最适合当前单机 imitation：
 
-- `src/tools/pd_imitation_trace.py`
-- `scripts/run_pd_imitation_full.sh`
-- `scripts/run_pd_imitation_offload_only.sh`
-- 旧版语义的 `pd_build_bucket_prompts.py`
-- 旧版语义的 `pd_collect_openai_samples.py`
+- 不需要额外服务
+- 仍然是 external backend 语义
+- 还能直接调读写吞吐
 
-原因很简单：
+如果以后要换成真正 centralized/shared backend，
+主脚本只需要改：
 
-- 它们的中心问题是“时间建模”和“逻辑 trace”
-- 而你现在的问题是“prefill restore 的 RX/H2D 能不能被打出来”
+- `LMCACHE_REMOTE_URL`
 
-继续保留旧主线只会增加歧义。
+其余代码不用动。
 
-## 5. 现在最应该怎么看结果
+## 4. 当前链路最关键的实验假设
 
-如果你要判断实验是否成功，优先级是：
+当前这条线建立在这些假设上：
 
-1. 看 `pcie_rx_timeline.svg`
-2. 看 `request_pcie_summary.csv` 里 `phase=reuse`
-3. 看 `pcie_tx_timeline.svg`
-4. 看 `request_pcie_summary.csv` 里 `phase=pressure`
+1. 如果关闭 vLLM GPU prefix cache，
+   那么高复用 turn 的主命中路径应该来自 LMCache。
 
-最关键的问题是：
+2. 如果每轮追加很小且 chunk 对齐，
+   那么 `reuse turn` 的大部分历史前缀都应是 external cache hit。
 
-- `pressure` 是否足够强到把主 session prefix 挤走
-- `reuse` 是否真的触发了 H2D restore
+3. 如果 LMCache hit ratio 高且 remote read GiB 大，
+   那么 `reuse` 的 PCIe RX 就应当更值得重点观察。
 
-## 6. 当前代码的假设
+## 5. 为什么这条线比旧版更对口
 
-这套新主线的隐含假设是：
+旧版主要在追：
 
-1. `vLLM prefix caching` 会让新 turn 复用旧前缀
-2. `native KV offloading` 会在显存压力下把部分 KV 放到 CPU
-3. pressure burst 能够提高旧 prefix 被挤走的概率
-4. 如果旧 prefix 已经不在 GPU，那么下一轮高复用 prefill 更可能拉高 RX
+- `native offloading`
+- `evict-heavy`
+- “能不能把旧 KV 挤出去再拉回来”
 
-需要注意的是：
+但现在这条线直接追的是：
 
-- 这仍然是单机近似，不是真双机 PD
-- 所以我们观测到的是：
-  - host memory <-> GPU
-- 而不是：
-  - remote prefill engine <-> decode engine
+- `external/shared prefix cache`
+- `prefill loads historical KV from external storage`
 
-## 7. 一句话总结
-
-如果把现在这套代码压成一句话，它做的是：
-
-- 用单 GPU、prefix caching、native offloading 和人为 pressure burst，
-- 去构造一个更接近“多轮 agent session” 的 restore-focused imitation，
-- 然后用 TX/RX 分开的 PCIe 观测去判断：
-- `reuse turn` 的 prefill 到底有没有明显的 H2D restore。
+所以它更接近你真正想 imitation 的论文语义。

@@ -1,62 +1,68 @@
-# 单 GPU 条件下的 Prefill-Restore Imitation 执行手册
+# 单 GPU 条件下的 External Prefix-Cache Imitation 执行手册
 
 这份手册已经**不再支持**旧的：
 
-- `prefill-only`
-- `decode-only`
-- `logical pd_imitation_trace.csv`
-
-主流程。
+- `prefill-only / decode-only`
+- `native offloading + pressure burst`
+- `prefill-restore` 主流程
 
 当前唯一支持的目标是：
 
-- 用单 GPU + `vLLM native KV offloading` + `prefix caching`
-- 构造一个**多轮 trajectory / 高 prefix reuse / 中间插 pressure burst**
-- 观察下一轮 `reuse turn` 的 prefill 是否出现明显的 **RX/H2D restore**
+- 用 `vLLM + LMCache`
+- 显式关闭 vLLM 自己的 GPU prefix caching
+- 把 LMCache 远端后端当作 **external/shared prefix cache**
+- 构造一个**长 session / 高 prefix reuse / 每轮只追加少量 suffix**
+- 直接观察：
+  - `LMCache remote read bytes`
+  - `LMCache hit tokens`
+  - `PCIe RX/TX` 随时间变化
 
-换句话说，这份手册要 imitation 的是这种场景：
+换句话说，这份流程要 imitation 的是这种场景：
 
 - 一个 agent/session 连续跑很多轮
 - 每一轮只追加很少的新 token
 - 大部分历史上下文都复用
-- 中间因为别的请求制造了 eviction 压力
-- 所以下一轮 prefill 需要把旧 KV 从 CPU 侧重新拉回 GPU
+- 下一轮 prefill 主要不是重算历史 prefix
+- 而是从 external prefix cache 把历史 KV 拉回来，再只算新增 suffix
 
 你真正关心的结果是：
 
-- `pressure` 阶段：
-  - TX / D2H eviction 是否真的被打起来
+- `seed` 阶段：
+  - 长前缀是否真的被写入 external cache
 - `reuse` 阶段：
-  - RX / H2D restore 是否真的被打起来
+  - `LMCache remote read` 是否很大
+  - `PCIe RX / H2D` 是否被显著抬高
 
-## 1. 这份流程和旧版有什么本质区别
+## 1. 这一版和上一版的本质区别
 
-旧版更像：
+上一版更像：
 
-- 一批彼此独立的长请求
-- 分别测 prefill 和 decode
-- 再做逻辑 trace
+- 依赖 `native CPU offloading`
+- 想用 eviction pressure 把旧 KV 从 GPU 挤走
+- 再观察下一轮 restore
 
-新版更像：
+这一版更像：
 
-- 同一个主 session 的多轮请求
-- 新一轮 prompt 以前一轮 prompt 为严格前缀
-- 中间插入无关长请求 burst
-- 目的是把主 session 的 prefix KV 从 GPU 挤走
-- 再观察下一轮高复用 prefill 的 restore 行为
+- 直接把 LMCache 远端后端作为 **external/shared prefix cache**
+- 不再依赖 GPU 内部 prefix cache
+- 不再依赖 pressure burst
+- 让每个 reuse turn 都走：
+  - `external cache hit`
+  - `remote read`
+  - `GPU RX`
 
 所以新版关注的是：
 
-- **prefix reuse**
-- **eviction pressure**
-- **reuse-turn prefill RX**
+- **LMCache hit ratio**
+- **LMCache remote read/write bytes**
+- **reuse turn 的 PCIe RX**
 
 而不是旧版的：
 
-- `prompt_tokens -> prefill_time`
-- `(context, gen) -> decode_time`
+- `pressure` 有没有把 eviction 打起来
+- `native offload` 有没有逼出 restore
 
-## 2. 这一版的默认配置
+## 2. 这一版的默认技术路线
 
 ### 2.1 模型
 
@@ -69,66 +75,139 @@
 
 - `dtype=bfloat16`
 - `max-model-len=32768`
-- `gpu-memory-utilization=0.70`
-- `max-num-seqs=8`
-- `--enable-prefix-caching`
-- `--kv-offloading-backend native`
-- `--kv-offloading-size 32`
-- `--disable-hybrid-kv-cache-manager`
+- `gpu-memory-utilization=0.85`
+- `max-num-seqs=1`
+- `--no-enable-prefix-caching`
+- `--kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'`
 
-这里的设计目标很明确：
+这里最重要的设计点有两个：
 
-- 让 GPU 侧 KV 空间更紧
-- 让 prefix cache 打开
-- 让 CPU offloading 真正参与
-- 让 pressure burst 更容易触发 eviction
+1. `--no-enable-prefix-caching`
+   - 关闭 vLLM 自己的 GPU prefix cache
+   - 避免 GPU 本地命中把 external cache 命中遮住
 
-### 2.3 Workload 参数
+2. `LMCacheConnectorV1`
+   - 把共享前缀的存取交给 LMCache
+   - 让后续 reuse turn 真正产生 `remote read`
 
-默认 workload 是：
+### 2.3 LMCache 默认配置
 
-- `base_prefix_tokens = 24576`
-- `append_tokens = 256,256,256,256,256,256`
+默认会写一份 `lmcache_config.yaml`，关键配置是：
+
+- `chunk_size: 256`
+- `local_cpu: false`
+- `max_local_cpu_size: 0`
+- `remote_serde: "naive"`
+- `save_decode_cache: false`
+- `save_unfull_chunk: false`
+
+这样做的目的很明确：
+
+- `chunk_size=256`
+  - 让每轮追加也按 `256` token 对齐
+  - 最大化可复用 chunk 的比例
+- `local_cpu=false`
+  - 避免 LMCache 本地 CPU cache 把 external backend 命中遮住
+- `save_decode_cache=false`
+  - 不把重点放在 decode 生成出来的 KV
+  - 让实验更聚焦于 prompt/prefix 复用
+- `save_unfull_chunk=false`
+  - 只缓存完整 chunk
+  - 配合 chunk-aligned prompt，让行为更稳定、更容易解释
+
+### 2.4 默认 external backend
+
+默认 backend 是：
+
+- `mock://...`
+
+也就是 LMCache 官方提供的 **mock remote backend**。
+
+这条默认路线的意义是：
+
+- 不需要额外起 Valkey / centralized server
+- 仍然是 LMCache 的 remote backend 语义
+- 可以直接控制：
+  - `peeking_latency`
+  - `read_throughput`
+  - `write_throughput`
+
+默认参数是：
+
+- `MOCK_STORAGE_GB=256`
+- `MOCK_PEEKING_LATENCY_MS=1`
+- `MOCK_READ_GBPS=40`
+- `MOCK_WRITE_GBPS=8`
+
+这组默认值的意图是：
+
+- 让 `reuse` 阶段的 external read 足够强
+- 同时让 `seed` 阶段的 external write 也能被观测到
+
+如果你后面想换成更“真的”后端，可以覆盖：
+
+```bash
+export LMCACHE_REMOTE_URL='lm://127.0.0.1:65432'
+```
+
+或者别的官方支持后端 URL。主流程和分析脚本不用改。
+
+## 3. Workload 设计
+
+默认 workload 不再有 `pressure`。
+
+它只包含：
+
+- `seed`
+- `reuse`
+
+默认参数是：
+
+- `seed_prompt_tokens = 24832`
+- `append_tokens = 256,256,256,256,256`
 - `num_turns = 6`
-- `main_decode_tokens = 32`
-- `pressure_prompt_tokens = 28672`
-- `pressure_burst_size = 8`
-- `pressure_rounds_per_turn = 2`
-- `pressure_decode_tokens = 1`
+- `decode_tokens = 16`
+- `chunk_size_tokens = 256`
 
 这表示：
 
-1. 先跑一个主 session 的 `warmup turn`
-2. 每个后续 turn 之前，插入两轮 pressure burst
-3. 每轮 pressure burst 都发 `8` 个超长独立请求
-4. 然后再发一个高复用的 `reuse turn`
+1. `turn_000_seed`
+   - 先提交一个约 `24.8K` token 的长 prompt
+   - 目的是把首轮长前缀写入 external cache
 
-这样做的目的就是：
+2. `turn_001_reuse` 以后
+   - 每轮只追加 `256` 个新 token
+   - 让前一轮的大部分 prefix 都可以从 external cache 复用
 
-- 让主 session 的旧 prefix KV 更有机会被挤到 CPU
-- 下一轮再用它时，prefill 需要 restore
+这里故意让：
 
-### 2.4 为什么 decode 要故意短
+- 每轮新增都是 `256` token
+- 总 prompt 长度尽量保持 `256` 对齐
+
+因为我们当前就是在追：
+
+- **chunk-aligned external prefix hit**
+
+### 为什么 decode 要故意短
 
 这一版故意把：
 
-- `main_decode_tokens = 32`
-- `pressure_decode_tokens = 1`
+- `decode_tokens = 16`
 
 设得比较短。
 
 因为当前目标不是测 steady-state decode，而是：
 
-- 尽量让 `reuse turn` 的 prefill restore 更显眼
-- 避免长 decode 自己又制造大量新的 eviction / D2H
+- 尽量让 prefill 阶段的 external read 更显眼
+- 避免长 decode 自己又制造很多额外干扰
 
-## 3. 输出目录
+## 4. 输出目录
 
 统一使用：
 
 ```bash
 export ROOT=$HOME/SkyGDR
-export RUN_ROOT=$ROOT/results/pd_restore_imitation_qwen3_8b
+export RUN_ROOT=$ROOT/results/pd_external_prefix_imitation_qwen3_8b
 ```
 
 最终主要产物包括：
@@ -136,6 +215,7 @@ export RUN_ROOT=$ROOT/results/pd_restore_imitation_qwen3_8b
 - `$RUN_ROOT/data/trajectory_workload.jsonl`
 - `$RUN_ROOT/data/trajectory_samples.csv`
 - `$RUN_ROOT/logs/gpu_metrics.csv`
+- `$RUN_ROOT/logs/vllm_external_prefix.log`
 - `$RUN_ROOT/summary/pcie_timeline.svg`
 - `$RUN_ROOT/summary/pcie_tx_timeline.svg`
 - `$RUN_ROOT/summary/pcie_rx_timeline.svg`
@@ -143,7 +223,7 @@ export RUN_ROOT=$ROOT/results/pd_restore_imitation_qwen3_8b
 - `$RUN_ROOT/summary/pcie_timeline_report.md`
 - `$RUN_ROOT/summary/pd_imitation_report.md`
 
-## 4. 一次性环境准备
+## 5. 一次性环境准备
 
 下面默认在 GPU server 上执行。
 
@@ -170,109 +250,137 @@ uv venv --python 3.12 --seed $VENV_PATH
 source $VENV_PATH/bin/activate
 
 uv pip install vllm --torch-backend=auto
-uv pip install "transformers>=4.51.0"
+uv pip install lmcache "transformers>=4.51.0"
 ```
 
-## 5. 直接运行
+## 6. 直接运行
 
 新的主流程只有一个入口：
 
-- [run_pd_restore_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_restore_imitation.sh)
+- [run_pd_external_prefix_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_external_prefix_imitation.sh)
 
 直接跑：
 
 ```bash
 cd $ROOT
-bash scripts/run_pd_restore_imitation.sh
+bash scripts/run_pd_external_prefix_imitation.sh
 ```
 
-如果你想调压力，可以先设环境变量再跑：
+如果你想调外部后端强度，可以先设环境变量再跑：
 
 ```bash
-export MAX_NUM_SEQS=8
-export GPU_MEMORY_UTILIZATION=0.70
-export PRESSURE_BURST_SIZE=8
-export PRESSURE_ROUNDS_PER_TURN=2
+export MOCK_READ_GBPS=60
+export MOCK_WRITE_GBPS=8
 export GPU_METRICS_INTERVAL_MS=20
 
-bash scripts/run_pd_restore_imitation.sh
+bash scripts/run_pd_external_prefix_imitation.sh
 ```
 
-## 6. 新主流程到底做了什么
+如果你想换成真正的 centralized/shared backend：
+
+```bash
+export LMCACHE_REMOTE_URL='lm://127.0.0.1:65432'
+bash scripts/run_pd_external_prefix_imitation.sh
+```
+
+## 7. 新主流程到底做了什么
 
 这个脚本会依次做下面几件事：
 
 1. 清理旧的 `vllm` 进程和残留显存
-2. 启动带 `prefix caching + native offloading` 的 `vllm serve`
-3. 启动 [gpu_metrics_logger.py](/Users/daniel/Documents/code/SkyGDR/src/tools/gpu_metrics_logger.py)
-4. 用 [pd_build_trajectory_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_trajectory_workload.py) 生成 trajectory workload
-5. 用 [pd_run_restore_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_restore_workload.py) 执行 workload
-6. 用 [pd_pcie_offload_analyze.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_pcie_offload_analyze.py) 生成 TX/RX/总带宽图和请求级统计
-7. 用 [pd_imitation_report.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_imitation_report.py) 写最终摘要
+2. 写出 `lmcache_config.yaml`
+3. 启动带 `LMCacheConnectorV1` 的 `vllm serve`
+4. 启动 [gpu_metrics_logger.py](/Users/daniel/Documents/code/SkyGDR/src/tools/gpu_metrics_logger.py)
+5. 用 [pd_build_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_external_prefix_workload.py) 生成多轮高复用 workload
+6. 用 [pd_run_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_external_prefix_workload.py) 顺序执行请求，并在每轮前后抓 `/metrics`
+7. 用 [pd_pcie_offload_analyze.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_pcie_offload_analyze.py) 生成 TX/RX/总带宽图和请求级统计
+8. 用 [pd_imitation_report.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_imitation_report.py) 写最终摘要
 
-## 7. 怎么看结果
+## 8. 怎么看结果
 
-### 7.1 先看 RX 图
+### 8.1 先看 `trajectory_samples.csv`
+
+最关键的请求级结果表是：
+
+- `$RUN_ROOT/data/trajectory_samples.csv`
+
+这里最值得看的是：
+
+- `lmcache_requested_tokens`
+- `lmcache_hit_tokens`
+- `lmcache_hit_ratio`
+- `lmcache_remote_read_GiB`
+- `lmcache_remote_write_GiB`
+
+如果你想 imitate：
+
+- “prefill engines must load large volumes of KV-Cache from remote storage”
+
+那最直接的成功信号就是：
+
+- `reuse` 行里的 `lmcache_hit_ratio` 很高
+- 同时 `lmcache_remote_read_GiB` 很大
+
+### 8.2 再看 RX 图
 
 你当前最重要的图是：
 
-- [pcie_rx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_restore_imitation_qwen3_8b/summary/pcie_rx_timeline.svg)
+- [pcie_rx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/pcie_rx_timeline.svg)
 
-如果你想 imitate “prefill engines must load large volumes of KV-Cache from remote storage”，
-那最值得看的就是：
+如果实验打对了，最值得期待的是：
 
-- `reuse` 阶段里，RX/H2D 有没有明显抬高
+- `reuse` 请求附近的 RX/H2D 明显抬高
 
-### 7.2 再看 TX 图
+### 8.3 再看 TX 图
 
-- [pcie_tx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_restore_imitation_qwen3_8b/summary/pcie_tx_timeline.svg)
+- [pcie_tx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/pcie_tx_timeline.svg)
 
 这张图主要用来判断：
 
-- `pressure` 阶段到底有没有把 eviction 压力打起来
+- `seed` 请求把长前缀写入 external cache 时，TX/D2H 有没有起来
 
-### 7.3 请求级 CSV
+### 8.4 请求级汇总 CSV
 
 最有用的数据表是：
 
-- [request_pcie_summary.csv](/Users/daniel/Documents/code/SkyGDR/results/pd_restore_imitation_qwen3_8b/summary/request_pcie_summary.csv)
+- [request_pcie_summary.csv](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/request_pcie_summary.csv)
 
-重点看：
+它已经把：
 
-- `phase=pressure`
-  - `peak_tx_GiB_s`
-  - `tx_total_GiB`
-- `phase=reuse`
-  - `peak_rx_GiB_s`
-  - `rx_total_GiB`
+- LMCache 远端读写
+- 请求级 RX/TX 总量
+- 请求级 RX/TX 峰值
 
-## 8. 如果 reuse 阶段 RX 还是不高，通常说明什么
+都合在一张表里了。
 
-最常见的解释有三个：
+## 9. 如果 reuse 阶段效果还是不够强，优先调什么
 
-1. 主 session 的旧 prefix KV 其实还留在 GPU 上
-2. restore 确实发生了，但被更细粒度地摊平了，没有形成大尖峰
-3. pressure burst 还不够强，没能把主 session 的 prefix KV 真正挤走
+最优先调的是这几个：
 
-这时优先调这几个参数：
+1. `seed_prompt_tokens`
+   - 让首轮长前缀更长
+2. `append_tokens`
+   - 继续保持 `256` 对齐，但可以把 turn 数变多
+3. `MOCK_READ_GBPS`
+   - 把外部后端读吞吐设得更高
+4. `GPU_METRICS_INTERVAL_MS`
+   - 调到 `10-20ms`，更容易抓到瞬时 RX 峰值
 
-- `MAX_NUM_SEQS`
-- `GPU_MEMORY_UTILIZATION`
-- `PRESSURE_BURST_SIZE`
-- `PRESSURE_ROUNDS_PER_TURN`
-- `BASE_PREFIX_TOKENS`
+如果你已经看到：
 
-## 9. 这一版不再做什么
+- `lmcache_hit_ratio` 很高
+- `lmcache_remote_read_GiB` 很大
 
-这份流程不再支持：
+但 `RX` 图还不够尖，
+那更像是：
 
-- 旧的 baseline/offload 双结果目录对照
-- 旧的 `pd_imitation_trace.csv`
-- 旧的 `prefill-only / decode-only` 两阶段采样
-- 旧的 `timing-first` 主线
+- 外部读回发生了
+- 只是被摊平在更长的 prefill 窗口里
 
-如果你现在要回答的问题是：
+这时不要先怀疑“没命中”，而是先看：
 
-- “在高 prefix reuse 的长 session 里，prefill restore 的 H2D 到底有没有被打出来？”
+- 请求级 `lmcache_remote_read_GiB`
+- `pcie_rx_timeline.svg`
+- `request_pcie_summary.csv`
 
-那新的这条主线才是当前仓库里的正确入口。
+三者是否一致。
