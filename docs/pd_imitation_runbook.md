@@ -1,846 +1,278 @@
-# 单 GPU 条件下的 PD Imitation 执行手册（Qwen3-8B-Instruct 实操版）
+# 单 GPU 条件下的 Prefill-Restore Imitation 执行手册
 
-## 0. 这份手册到底要做什么
+这份手册已经**不再支持**旧的：
 
-这份手册的目标很明确：
+- `prefill-only`
+- `decode-only`
+- `logical pd_imitation_trace.csv`
 
-- 在 **只有一台 A100** 的条件下，构造一套 **纯 PD imitation** 的数据采集流程
-- 不强行搭建真实的 `prefill/decode disaggregation`
-- 不依赖 LMCache 作为第 1 阶段的必需组件
-- 直接产出一个可用于后续 case study 的逻辑 trace：
-  - `pd_imitation_trace.csv`
+主流程。
 
-第 1 阶段只做三件事：
+当前唯一支持的目标是：
 
-1. 采 `prefill-only` 在不同 prompt 长度下的耗时
-2. 采 `decode-only` 在不同 context 长度和生成长度下的耗时
-3. 用目标模型的结构参数计算 `KV bytes per token`
+- 用单 GPU + `vLLM native KV offloading` + `prefix caching`
+- 构造一个**多轮 trajectory / 高 prefix reuse / 中间插 pressure burst**
+- 观察下一轮 `reuse turn` 的 prefill 是否出现明显的 **RX/H2D restore**
 
-然后把这三部分合成一个逻辑上的 PD trace。
+换句话说，这份手册要 imitation 的是这种场景：
 
-这份 trace 是**逻辑 trace**，不是“真实 PD 系统里的网络抓包结果”。它回答的是：
+- 一个 agent/session 连续跑很多轮
+- 每一轮只追加很少的新 token
+- 大部分历史上下文都复用
+- 中间因为别的请求制造了 eviction 压力
+- 所以下一轮 prefill 需要把旧 KV 从 CPU 侧重新拉回 GPU
 
-- 某个 prompt 长度下，prefill 要多久
-- 某个 context 长度和生成长度下，decode 要多久
-- prefill 结束后，逻辑上会有多少 KV
-- decode worker 理论上需要接收或持有多少 KV
+你真正关心的结果是：
 
-## 1. 这一版写死的默认配置
+- `pressure` 阶段：
+  - TX / D2H eviction 是否真的被打起来
+- `reuse` 阶段：
+  - RX / H2D restore 是否真的被打起来
 
-为了让你可以直接复制命令，这一版把模型和关键参数固定下来。
+## 1. 这份流程和旧版有什么本质区别
 
-### 1.1 模型口径
+旧版更像：
 
-这一版使用：
+- 一批彼此独立的长请求
+- 分别测 prefill 和 decode
+- 再做逻辑 trace
 
-- 实际下载的官方模型路径：`Qwen/Qwen3-8B`
-- 对外 API 固定模型名：`Qwen3-8B-Instruct`
+新版更像：
 
-为什么这么做：
+- 同一个主 session 的多轮请求
+- 新一轮 prompt 以前一轮 prompt 为严格前缀
+- 中间插入无关长请求 burst
+- 目的是把主 session 的 prefix KV 从 GPU 挤走
+- 再观察下一轮高复用 prefill 的 restore 行为
 
-- Qwen 官方当前给出的文本 8B 主仓是 `Qwen/Qwen3-8B`
-- 为了让你采样脚本里的 `--model` 字段更稳定、更直观，本手册在 `vllm serve` 时会固定：
-  - `--served-model-name Qwen3-8B-Instruct`
+所以新版关注的是：
 
-这样对实验脚本来说，模型名就是：
+- **prefix reuse**
+- **eviction pressure**
+- **reuse-turn prefill RX**
 
-- `Qwen3-8B-Instruct`
+而不是旧版的：
 
-但底层实际加载的还是官方仓：
+- `prompt_tokens -> prefill_time`
+- `(context, gen) -> decode_time`
 
-- `Qwen/Qwen3-8B`
+## 2. 这一版的默认配置
 
-### 1.2 固定 KV 参数
+### 2.1 模型
 
-根据 `Qwen/Qwen3-8B` 官方 `config.json`，这一版固定使用：
+- 实际模型：`Qwen/Qwen3-8B`
+- 服务名：`Qwen3-8B-Instruct`
 
-- `num_hidden_layers = 36`
-- `num_key_value_heads = 8`
-- `head_dim = 128`
-- `dtype_bytes = 2`（`bfloat16`）
+### 2.2 服务参数
 
-因此：
+默认服务参数是：
 
-```text
-KV_bytes_per_token = 2 × 36 × 8 × 128 × 2 = 147456 bytes
-```
+- `dtype=bfloat16`
+- `max-model-len=32768`
+- `gpu-memory-utilization=0.70`
+- `max-num-seqs=8`
+- `--enable-prefix-caching`
+- `--kv-offloading-backend native`
+- `--kv-offloading-size 32`
+- `--disable-hybrid-kv-cache-manager`
 
-也就是：
+这里的设计目标很明确：
 
-- `144 KiB / token`
+- 让 GPU 侧 KV 空间更紧
+- 让 prefix cache 打开
+- 让 CPU offloading 真正参与
+- 让 pressure burst 更容易触发 eviction
 
-这一步后面会直接写死进 trace 生成命令，不需要你再去找 HF cache 里的 `config.json`。
+### 2.3 Workload 参数
 
-### 1.3 固定服务参数
+默认 workload 是：
 
-这一版默认：
+- `base_prefix_tokens = 24576`
+- `append_tokens = 256,256,256,256,256,256`
+- `num_turns = 6`
+- `main_decode_tokens = 32`
+- `pressure_prompt_tokens = 28672`
+- `pressure_burst_size = 8`
+- `pressure_rounds_per_turn = 2`
+- `pressure_decode_tokens = 1`
 
-- `dtype = bfloat16`
-- `max-model-len = 32768`
-- `gpu-memory-utilization = 0.85`
-- `max-num-seqs = 4`
-- `generation-config = vllm`
-- endpoint 使用：
-  - `/v1/completions`
+这表示：
 
-为什么优先用 `completion`：
+1. 先跑一个主 session 的 `warmup turn`
+2. 每个后续 turn 之前，插入两轮 pressure burst
+3. 每轮 pressure burst 都发 `8` 个超长独立请求
+4. 然后再发一个高复用的 `reuse turn`
 
-- 它不会像 `chat` endpoint 那样额外经过 chat template
-- 对 `prompt_tokens` 桶控更干净
-- 更适合 phase-1 的 timing collection
+这样做的目的就是：
 
-为什么这一版要显式加 `max-num-seqs = 4`：
+- 让主 session 的旧 prefix KV 更有机会被挤到 CPU
+- 下一轮再用它时，prefill 需要 restore
 
-- 我们希望 baseline 和 offloading 都承受相同的请求重叠压力
-- 对 native CPU KV offloading 来说，想观察更明显的 CPU-GPU KV 搬运，仅靠单条串行请求通常不够
-- 这里用“更长的上下文 + 更长的生成 + 受控并发”来放大两者差异
+### 2.4 为什么 decode 要故意短
 
-如果你的目标是“尽量把 CPU-GPU 传输打大”，更应该优先调的是：
+这一版故意把：
 
-- `MAX_NUM_SEQS`
-- `PARALLEL_REQUESTS`
-- 更长的 context / generation
+- `main_decode_tokens = 32`
+- `pressure_decode_tokens = 1`
 
-而不是只把 `OFFLOAD_SIZE_GIB` 一味调大。
+设得比较短。
 
-原因是：
+因为当前目标不是测 steady-state decode，而是：
 
-- `OFFLOAD_SIZE_GIB` 主要决定 CPU 侧能装下多少 offloaded KV
-- 它本身不会自动制造更多 PCIe 传输
-- 真正决定传输压力的，是当前活跃工作集大小和请求重叠程度
+- 尽量让 `reuse turn` 的 prefill restore 更显眼
+- 避免长 decode 自己又制造大量新的 eviction / D2H
 
-## 2. 为什么第 1 阶段不需要 LMCache
+## 3. 输出目录
 
-如果你当前不跑真正的 PD 分离 offloading，那么第 1 阶段并不需要 LMCache。
-
-原因是：
-
-- 你现在不需要真实跨机 KV 搬运
-- 你只需要：
-  - `prompt_tokens -> prefill_time`
-  - `(context_tokens, generated_tokens) -> decode_time`
-  - `KV_bytes_per_token`
-
-这三样已经足够生成 `pd_imitation_trace.csv`。
-
-所以 phase 1 的主线应该是：
-
-- `vLLM native / single-GPU / prefill-decode timing extraction`
-
-而不是：
-
-- 先去搭一个完整的 LMCache 远端 backend
-
-## 3. 为什么仍然保留 vLLM 原生 KV offloading 和 LMCache
-
-这两个东西在后面仍然有用，但不是当前主流程的必需项。
-
-### 3.1 vLLM 原生 KV offloading
-
-如果你后续要观察单 GPU 条件下的 cache offloading，对你当前硬件最直接的选择是：
-
-- `vLLM` 原生 KV offloading
-
-但它在这份手册中的位置是：
-
-- **附加实验**
-- 不是 phase-1 的主流程依赖
-
-### 3.2 LMCache
-
-LMCache 更适合：
-
-- remote / external backend
-- 更真实的 cache movement
-- 第 2 阶段的 replay 或 chunk-aware transfer 建模
-
-所以更准确的关系是：
-
-- **phase 1**：先用 vLLM 做 timing + 逻辑 trace
-- **phase 2**：如果要做真实远端 KV 路径，再考虑 LMCache
-
-## 4. 目录、环境变量和输出路径
-
-下面所有命令默认在 GPU server 上执行。
-
-先统一环境变量：
+统一使用：
 
 ```bash
 export ROOT=$HOME/SkyGDR
-export BASELINE_RUN_ROOT=$ROOT/results/pd_imitation_qwen3_8b_instruct
-export OFFLOAD_RUN_ROOT=$ROOT/results/pd_imitation_qwen3_8b_instruct_native_offload
-export RUN_ROOT=$BASELINE_RUN_ROOT
-export MODEL_PATH=Qwen/Qwen3-8B
-export SERVED_MODEL=Qwen3-8B-Instruct
-export API_BASE=http://127.0.0.1:8000
-export PORT=8000
+export RUN_ROOT=$ROOT/results/pd_restore_imitation_qwen3_8b
+```
+
+最终主要产物包括：
+
+- `$RUN_ROOT/data/trajectory_workload.jsonl`
+- `$RUN_ROOT/data/trajectory_samples.csv`
+- `$RUN_ROOT/logs/gpu_metrics.csv`
+- `$RUN_ROOT/summary/pcie_timeline.svg`
+- `$RUN_ROOT/summary/pcie_tx_timeline.svg`
+- `$RUN_ROOT/summary/pcie_rx_timeline.svg`
+- `$RUN_ROOT/summary/request_pcie_summary.csv`
+- `$RUN_ROOT/summary/pcie_timeline_report.md`
+- `$RUN_ROOT/summary/pd_imitation_report.md`
+
+## 4. 一次性环境准备
+
+下面默认在 GPU server 上执行。
+
+```bash
+export ROOT=$HOME/SkyGDR
 export DATA_ROOT=/data/danyang
 export VENV_PATH=$DATA_ROOT/venvs/vllm
 export UV_CACHE_DIR=$DATA_ROOT/uv-cache
 export TMPDIR=$DATA_ROOT/tmp
 export HF_HOME=$DATA_ROOT/hf-cache
 export HUGGINGFACE_HUB_CACHE=$HF_HOME/hub
-export GPU_INDEX=0
-export GPU_METRICS_INTERVAL_MS=100
-export MAX_NUM_SEQS=4
-export PARALLEL_REQUESTS=4
-export OFFLOAD_SIZE_GIB=32
-export GPU_MEMORY_UTILIZATION=0.85
 
 mkdir -p $DATA_ROOT/{uv-cache,tmp,venvs,hf-cache}
-mkdir -p $BASELINE_RUN_ROOT/{logs,data,summary}
-mkdir -p $OFFLOAD_RUN_ROOT/{logs,data,summary}
 cd $ROOT
 ```
 
-这一版最终会产出：
-
-- `$RUN_ROOT/data/prefill_prompts.jsonl`
-- `$RUN_ROOT/data/decode_prompts.jsonl`
-- `$RUN_ROOT/data/prefill_samples.csv`
-- `$RUN_ROOT/data/decode_samples.csv`
-- `$RUN_ROOT/summary/pd_imitation_trace.csv`
-- `$RUN_ROOT/summary/pd_imitation_summary.json`
-
-这里有一个很重要的约定：
-
-- 默认 `RUN_ROOT=$BASELINE_RUN_ROOT`
-- baseline 和 offloading 一定要落到两个不同目录
-- 否则后面生成对照图和对照报告时会把两轮数据混在一起
-
-这里新增的这些环境变量用于“直接观测 PCIe / CPU-GPU 传输”：
-
-- `GPU_METRICS_INTERVAL_MS`
-  - `gpu_metrics_logger.py` 的采样周期
-- `MAX_NUM_SEQS`
-  - 服务端活跃序列数上限
-- `PARALLEL_REQUESTS`
-  - 客户端并发请求数
-- `OFFLOAD_SIZE_GIB`
-  - CPU 侧 offload buffer 容量
-- `GPU_MEMORY_UTILIZATION`
-  - 服务端显存利用率上限
-
-## 5. 一次性环境准备
-
-### 5.1 安装 `uv`
-
-如果 GPU server 还没有 `uv`：
+如果还没有环境：
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-uv --version
-```
 
-### 5.2 创建 Python 环境并安装依赖
-
-`vLLM` 官方 quickstart 当前推荐：
-
-- `Python 3.12`
-- 用 `uv venv`
-- 用 `uv pip install vllm --torch-backend=auto`
-
-这里直接照这个来：
-
-```bash
-cd $ROOT
-mkdir -p $DATA_ROOT/{uv-cache,tmp,venvs,hf-cache}
 uv venv --python 3.12 --seed $VENV_PATH
 source $VENV_PATH/bin/activate
 
 uv pip install vllm --torch-backend=auto
-uv pip install "transformers>=4.51.0" openai
+uv pip install "transformers>=4.51.0"
 ```
 
-验证：
+## 5. 直接运行
 
-```bash
-python3 - <<'PY'
-import vllm, transformers
-print("vllm =", vllm.__version__)
-print("transformers =", transformers.__version__)
-PY
-```
+新的主流程只有一个入口：
 
-在当前这台机器上，已经验证过一组可用版本：
+- [run_pd_restore_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_restore_imitation.sh)
 
-- `vllm = 0.18.0`
-- `transformers = 4.57.6`
-
-说明：
-
-- `Qwen3` 官方模型卡明确建议使用较新的 `transformers`
-- 如果 `transformers<4.51.0`，会遇到 `KeyError: 'qwen3'`
-- 之所以把 cache、tmp 和 venv 都放到 `/data/danyang`，是因为这台机器的 `/home` 空间非常紧，而 `vllm + torch + 模型缓存` 都比较大，继续落到 `/home` 很容易再次安装失败
-
-## 6. 启动 vLLM 服务
-
-### 6.1 主流程推荐启动命令
-
-这条命令是 phase-1 的默认主线，不启用任何 offloading。
-
-如果你是第一次跑，请先确认：
-
-```bash
-export RUN_ROOT=$BASELINE_RUN_ROOT
-```
-
-然后再启动：
+直接跑：
 
 ```bash
 cd $ROOT
-source $VENV_PATH/bin/activate
-
-vllm serve $MODEL_PATH \
-  --served-model-name $SERVED_MODEL \
-  --host 127.0.0.1 \
-  --port $PORT \
-  --dtype bfloat16 \
-  --max-model-len 32768 \
-  --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
-  --max-num-seqs $MAX_NUM_SEQS \
-  --generation-config vllm \
-  2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct.log
+bash scripts/run_pd_restore_imitation.sh
 ```
 
-这条命令建议单独占一个终端，记作 `G1`。
-
-### 6.2 为什么这样配
-
-- `--served-model-name $SERVED_MODEL`
-  - 让 API 层统一使用 `Qwen3-8B-Instruct`
-- `--dtype bfloat16`
-  - 官方模型为 BF16
-  - A100 对 BF16 支持稳定
-- `--max-model-len 32768`
-  - 与 Qwen 官方文档的原生长度口径一致
-- `--gpu-memory-utilization 0.85`
-  - 比较保守，单卡更稳
-- `--max-num-seqs 4`
-  - 明确允许多条请求在服务端重叠
-  - 这是为了让 baseline 和 offloading 都处在更接近“有 KV 压力”的状态
-- `--generation-config vllm`
-  - 避免 Hugging Face 仓库里的 `generation_config.json` 覆盖你的实验采样参数
-
-## 7. 服务健康检查
-
-等 `G1` 启动完成后，在另一个终端 `G2` 里执行：
-
-### 7.1 看 `/v1/models`
-
-```bash
-curl -s $API_BASE/v1/models | python3 -m json.tool
-```
-
-你应该能看到类似：
-
-- `id: "Qwen3-8B-Instruct"`
-
-### 7.2 做一个最小 completion 请求
-
-```bash
-curl -s $API_BASE/v1/completions \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "Qwen3-8B-Instruct",
-    "prompt": "Hello",
-    "max_tokens": 1,
-    "temperature": 0
-  }' | python3 -m json.tool
-```
-
-如果这一步能正常返回，说明采样脚本也能工作。
-
-## 8. 第 1A 阶段：构造“长对话”模板与 prefill prompts
-
-### 8.1 先写一个长对话模板
-
-这一版不再只用一句简单前缀，而是改成更像真实多轮对话的纯文本模板。
-
-这样做的目的有两个：
-
-- 让上下文更接近真实 assistant 场景
-- 让 prompt 里天然包含更多历史轮次，从而放大 KV footprint
-
-直接复制执行：
-
-```bash
-cat > $RUN_ROOT/data/long_dialogue_prefix.txt <<'EOF'
-System: You are a careful and concise assistant helping with code, systems, and ML infrastructure questions.
-
-User: I am profiling a distributed inference runtime and want to understand memory movement.
-Assistant: Sure. We should separate prefill cost, decode cost, and cache movement so we can reason about contention clearly.
-
-User: I also care about long-context serving and cache offloading.
-Assistant: Then we should use longer dialogue-style prompts, preserve multi-turn history, and compare a baseline path with an offloading path under the same request mix.
-
-User: Please keep track of token count, decode length, throughput, and KV size.
-Assistant: Understood. We will focus on prompt length, generation length, and the implied KV footprint under the target model.
-
-User: I want the workload to resemble a realistic debugging conversation with repeated context carry-over.
-Assistant:
-EOF
-```
-
-### 8.2 首轮 prefill bucket
-
-为了更容易观察长上下文下的差异，这一版把 bucket 往长上下文集中：
-
-- `2048`
-- `4096`
-- `8192`
-- `16384`
-- `24576`
-- `28672`
-
-每桶样本数：
-
-- `12`
-
-为什么不再直接用 `32768`：
-
-- 你之前已经实际撞到过 `max-model-len=32768` 的上限
-- `32768 prompt + 1 output token` 会直接报错
-- `28672` 仍然足够长，但更稳，更适合 baseline/offloading 对照
-
-### 8.3 直接复制执行
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-python3 src/tools/pd_build_bucket_prompts.py \
-  --model_or_tokenizer $MODEL_PATH \
-  --target_tokens 2048,4096,8192,16384,24576,28672 \
-  --samples_per_bucket 12 \
-  --prefix_file $RUN_ROOT/data/long_dialogue_prefix.txt \
-  --out $RUN_ROOT/data/prefill_prompts.jsonl
-```
-
-### 8.4 快速检查
-
-```bash
-head -n 2 $RUN_ROOT/data/prefill_prompts.jsonl
-wc -l $RUN_ROOT/data/prefill_prompts.jsonl
-```
-
-理论上总行数应为：
-
-- `6 × 12 = 72`
-
-## 9. 第 1B 阶段：采集 prefill-only 样本
-
-### 9.1 采样策略
-
-固定：
-
-- `max_tokens = 1`
-- `temperature = 0`
-- endpoint = `completion`
-
-这一版把：
-
-- `total_elapsed_ms`
-
-直接当作：
-
-- `effective_prefill_ms`
-
-因为 decode 只生成 `1 token`，影响很小。
-
-### 9.2 直接复制执行
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-python3 src/tools/pd_collect_openai_samples.py \
-  --api_base $API_BASE \
-  --model $SERVED_MODEL \
-  --mode prefill \
-  --input_jsonl $RUN_ROOT/data/prefill_prompts.jsonl \
-  --endpoint completion \
-  --parallel_requests $PARALLEL_REQUESTS \
-  --out_csv $RUN_ROOT/data/prefill_samples.csv
-```
-
-这里的 `--parallel_requests $PARALLEL_REQUESTS` 很重要：
-
-- 它会同时发出 4 条请求
-- 对 baseline 和 offloading 都使用同样的并发
-- 这样才能让两边承受相近的请求重叠压力
-- 如果你发现 baseline 出现明显失败，再把 baseline 和 offloading **一起**降到 `2`
-
-### 9.3 快速检查
-
-```bash
-head -n 5 $RUN_ROOT/data/prefill_samples.csv
-tail -n 5 $RUN_ROOT/data/prefill_samples.csv
-```
-
-你重点看这几列：
-
-- `prompt_tokens`
-- `elapsed_ms`
-- `effective_prefill_ms`
-- `prefill_tps`
-- `usage_prompt_tokens`
-- `usage_completion_tokens`
-- `http_status`
-- `error`
-
-### 9.4 验收标准
-
-最低要求：
-
-- 每个 bucket 都有成功样本
-- `http_status` 主要为 `200`
-- `error` 为空
-- 平均延迟随 `prompt_tokens` 增大而上升
-
-## 10. 第 1C 阶段：构造 decode prompts
-
-### 10.1 首轮 context bucket
-
-固定为：
-
-- `2048`
-- `4096`
-- `8192`
-- `16384`
-- `24576`
-- `28672`
-
-每桶样本数：
-
-- `12`
-
-### 10.2 直接复制执行
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-python3 src/tools/pd_build_bucket_prompts.py \
-  --model_or_tokenizer $MODEL_PATH \
-  --target_tokens 2048,4096,8192,16384,24576,28672 \
-  --samples_per_bucket 12 \
-  --prefix_file $RUN_ROOT/data/long_dialogue_prefix.txt \
-  --out $RUN_ROOT/data/decode_prompts.jsonl
-```
-
-## 11. 第 1D 阶段：采集 decode-only 样本
-
-### 11.1 首轮 generation bucket
-
-固定为：
-
-- `128`
-- `256`
-- `512`
-
-### 11.2 采样口径
-
-这一版用最粗粒度、最稳定的估计方式：
-
-- 不扣掉 prefill 时间
-- 直接使用：
-  - `decode_ms_per_token = elapsed_ms / generated_tokens`
-
-这不是纯净的真实 decode kernel 时间，但足够支撑第一版 PD imitation。
-
-为什么把 generation 往大调：
-
-- `g=32` 和 `g=64` 更容易被固定开销污染
-- `g=128/256/512` 更接近 steady-state decode
-- 生成越长，decode 期间累计持有和增长的 KV 也越多，更容易放大 offloading 路径的效果
-
-### 11.3 直接复制执行
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-python3 src/tools/pd_collect_openai_samples.py \
-  --api_base $API_BASE \
-  --model $SERVED_MODEL \
-  --mode decode \
-  --input_jsonl $RUN_ROOT/data/decode_prompts.jsonl \
-  --generated_tokens 128,256,512 \
-  --endpoint completion \
-  --parallel_requests $PARALLEL_REQUESTS \
-  --out_csv $RUN_ROOT/data/decode_samples.csv
-```
-
-### 11.4 快速检查
-
-```bash
-head -n 5 $RUN_ROOT/data/decode_samples.csv
-tail -n 5 $RUN_ROOT/data/decode_samples.csv
-```
-
-重点看：
-
-- `context_tokens`
-- `generated_tokens`
-- `elapsed_ms`
-- `decode_ms_per_token`
-- `decode_tps`
-- `usage_prompt_tokens`
-- `usage_completion_tokens`
-
-## 12. 第 1E 阶段：生成逻辑 PD trace
-
-这一版直接把 `Qwen3-8B-Instruct` 的 KV 参数写死，所以不需要你再去找模型配置文件。
-
-### 12.1 直接复制执行
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-python3 src/tools/pd_imitation_trace.py \
-  --prefill_csv $RUN_ROOT/data/prefill_samples.csv \
-  --decode_csv $RUN_ROOT/data/decode_samples.csv \
-  --num_layers 36 \
-  --num_kv_heads 8 \
-  --head_dim 128 \
-  --dtype_bytes 2 \
-  --chunk_size_tokens 256 \
-  --out_csv $RUN_ROOT/summary/pd_imitation_trace.csv \
-  --summary_out $RUN_ROOT/summary/pd_imitation_summary.json
-```
-
-### 12.2 输出解释
-
-主要输出：
-
-- `$RUN_ROOT/summary/pd_imitation_trace.csv`
-- `$RUN_ROOT/summary/pd_imitation_summary.json`
-
-其中 `pd_imitation_trace.csv` 至少会告诉你：
-
-- `prefill_time_ms`
-- `decode_time_ms`
-- `kv_bytes_per_token`
-- `prefill_kv_bytes`
-- `decode_required_kv_bytes`
-- `chunked_prefill_kv_bytes`
-- `chunked_decode_kv_bytes`
-
-### 12.3 快速检查
-
-```bash
-head -n 10 $RUN_ROOT/summary/pd_imitation_trace.csv
-cat $RUN_ROOT/summary/pd_imitation_summary.json
-```
-
-## 13. 如果你想顺手观察 vLLM 原生 KV offloading
-
-这不是 phase-1 主流程，但非常适合拿来做第二组对照。
-
-推荐顺序是：
-
-1. 先跑完整的 baseline
-2. 再开 native CPU KV offloading
-3. 用完全相同的 prompt buckets 和采样脚本重跑一轮
-4. 最后生成 baseline vs offloading 的对照报告
-
-### 13.1 先切到 offloading 结果目录
-
-```bash
-export RUN_ROOT=$OFFLOAD_RUN_ROOT
-mkdir -p $RUN_ROOT/{logs,data,summary}
-```
-
-### 13.2 改服务启动命令
-
-把第 6 节里的启动命令改成：
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-vllm serve $MODEL_PATH \
-  --served-model-name $SERVED_MODEL \
-  --host 127.0.0.1 \
-  --port $PORT \
-  --dtype bfloat16 \
-  --max-model-len 32768 \
-  --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
-  --max-num-seqs $MAX_NUM_SEQS \
-  --generation-config vllm \
-  --kv-offloading-size $OFFLOAD_SIZE_GIB \
-  --kv-offloading-backend native \
-  --disable-hybrid-kv-cache-manager \
-  2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log
-```
-
-### 13.3 这意味着什么
-
-- `--kv-offloading-size $OFFLOAD_SIZE_GIB`
-  - 给 CPU 侧 KV offloading buffer 分配对应大小的 CPU 内存
-  - 这不是 vLLM 官方给出的统一推荐值，而是为了更容易观察 offloading 效果而选的“更激进”的实验值
-  - 对当前 `Qwen3-8B` + 长上下文 workload，这个值更容易让 CPU-GPU 间的 KV 搬运变得可观
-- `--kv-offloading-backend native`
-  - 使用 vLLM 原生 CPU KV offloading
-- `--disable-hybrid-kv-cache-manager`
-  - 在 vLLM `0.18.x` 上，`OffloadingConnector` 与默认的 hybrid KV cache manager（HMA）不兼容；不加这一行会直接报：`Connector OffloadingConnector does not support HMA`
-
-这个实验适合回答：
-
-- 开启 native KV offloading 后，单 GPU 上的请求时延和吞吐怎么变
-- 在更长对话、更长 context、更长 generation、受控并发下，CPU-GPU KV 搬运是否开始显著影响 decode / prefill
-
-但它不改变这份手册的主目标：
-
-- 当前主目标仍然是生成逻辑上的 `pd_imitation_trace.csv`
-
-### 13.4 重新跑同一套采样流程
-
-切到 `RUN_ROOT=$OFFLOAD_RUN_ROOT` 之后，重新执行下面这些节：
-
-- 第 8 节：构造 prefill prompts
-- 第 9 节：采集 prefill-only
-- 第 10 节：构造 decode prompts
-- 第 11 节：采集 decode-only
-- 第 12 节：生成逻辑 PD trace
-
-这样你会得到第二组完整产物：
-
-- `$OFFLOAD_RUN_ROOT/data/prefill_samples.csv`
-- `$OFFLOAD_RUN_ROOT/data/decode_samples.csv`
-- `$OFFLOAD_RUN_ROOT/summary/pd_imitation_trace.csv`
-- `$OFFLOAD_RUN_ROOT/summary/pd_imitation_summary.json`
-
-### 13.5 生成 baseline vs offloading 对照报告
-
-baseline 跑完、offloading 也跑完之后，可以直接生成一份对照报告：
-
-```bash
-cd $ROOT
-source $VENV_PATH/bin/activate
-
-python3 src/tools/pd_imitation_report.py \
-  --results_dir $BASELINE_RUN_ROOT \
-  --compare_results_dir $OFFLOAD_RUN_ROOT \
-  --base_label baseline \
-  --compare_label native_offload
-```
-
-这条命令会在 baseline 目录下额外生成：
-
-- `$BASELINE_RUN_ROOT/summary/pd_imitation_compare_report.md`
-- `$BASELINE_RUN_ROOT/fig/compare_prefill_latency.svg`
-- `$BASELINE_RUN_ROOT/fig/compare_decode_g512_mspt.svg`（与第 11 节最大 `generated_tokens` 桶一致；若你改小 generation bucket，文件名会随报告脚本变化）
-
-这份对照报告的重点是：
-
-- baseline 和 native CPU offloading 的 prefill latency 是否出现分叉
-- 当前最大 generation bucket（本手册为 `g=512`）这个更接近 steady-state 的 decode proxy 在不同 context 下是否明显变差
-
-### 13.6 直接观测 PCIe / CPU-GPU 传输
-
-如果你想更直接地看到 offloading 期间的 CPU-GPU 传输，而不是只看请求级 latency，这一版还配套了：
-
-- `src/tools/gpu_metrics_logger.py`
-- `src/tools/pd_pcie_offload_analyze.py`
-
-新版脚本现在会自动生成：
-
-- `$RUN_ROOT/logs/gpu_metrics.csv`
-  - 原始 GPU PCIe 时序
-- `$RUN_ROOT/summary/pcie_timeline_window.csv`
-  - 按请求窗口裁剪后的时序
-- `$RUN_ROOT/summary/pcie_timeline_summary.json`
-  - 全窗口 / prefill / decode 的总量与峰值统计
-- `$RUN_ROOT/summary/pcie_timeline_report.md`
-  - 文字版总结
-- `$RUN_ROOT/summary/pcie_timeline.svg`
-  - 带宽随时间变化图
-
-这些文件主要回答：
-
-- 从 offloading workload 开始到最后一个 decode/restore 结束，总共发生了多少 CPU-GPU PCIe 传输
-- 这段时间内 `tx` / `rx` / `tx+rx` 的带宽如何变化
-- prefill 和 decode 两个阶段分别贡献了多少传输总量
-
-最推荐先看的两个指标是：
-
-- `pcie_total_GiB_s`
-  - 双向总带宽，最稳妥
-- `pcie_total_cum_GiB`
-  - 双向累计总量
-
-如果你特别关心“restore 是否很重”，再进一步看：
-
-- `pcie_rx_GiB_s`
-
-在很多平台上，host -> GPU 的 restore 更容易体现在 GPU 侧 `RX`，但方向解释最好结合实测一起判断。
-
-### 13.7 如果你想把传输打得更大
-
-如果你发现 `pcie_timeline_report.md` 里的总量和峰值还是不够大，建议按这个顺序逐步加压：
-
-1. 先把 `MAX_NUM_SEQS` 和 `PARALLEL_REQUESTS` 从 `4` 提到 `6`
-2. 如果稳定，再一起提到 `8`
-3. 保持最长的 context / generation buckets，不要退回短 prompt
-4. baseline 和 offloading 必须保持同一组参数
-
-推荐写法：
-
-```bash
-export MAX_NUM_SEQS=6
-export PARALLEL_REQUESTS=6
-export GPU_METRICS_INTERVAL_MS=100
-```
-
-如果这组依旧稳定，再试：
+如果你想调压力，可以先设环境变量再跑：
 
 ```bash
 export MAX_NUM_SEQS=8
-export PARALLEL_REQUESTS=8
-export GPU_METRICS_INTERVAL_MS=50
+export GPU_MEMORY_UTILIZATION=0.70
+export PRESSURE_BURST_SIZE=8
+export PRESSURE_ROUNDS_PER_TURN=2
+export GPU_METRICS_INTERVAL_MS=20
+
+bash scripts/run_pd_restore_imitation.sh
 ```
 
-更稳妥的经验是：
+## 6. 新主流程到底做了什么
 
-- 先加并发和活跃序列数
-- 再观察 `pcie_total_GiB_s` 和 `pcie_total_cum_GiB` 是否明显上涨
-- `OFFLOAD_SIZE_GIB` 只需要“足够装下 offloaded KV”，不要把它误当成直接放大带宽的主旋钮
+这个脚本会依次做下面几件事：
 
-## 14. 最低验收标准
+1. 清理旧的 `vllm` 进程和残留显存
+2. 启动带 `prefix caching + native offloading` 的 `vllm serve`
+3. 启动 [gpu_metrics_logger.py](/Users/daniel/Documents/code/SkyGDR/src/tools/gpu_metrics_logger.py)
+4. 用 [pd_build_trajectory_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_trajectory_workload.py) 生成 trajectory workload
+5. 用 [pd_run_restore_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_restore_workload.py) 执行 workload
+6. 用 [pd_pcie_offload_analyze.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_pcie_offload_analyze.py) 生成 TX/RX/总带宽图和请求级统计
+7. 用 [pd_imitation_report.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_imitation_report.py) 写最终摘要
 
-当下面这些都满足时，说明第 1 阶段完成：
+## 7. 怎么看结果
 
-- `$RUN_ROOT/data/prefill_samples.csv` 已生成
-- `$RUN_ROOT/data/decode_samples.csv` 已生成
-- `$RUN_ROOT/summary/pd_imitation_trace.csv` 已生成
-- `$RUN_ROOT/summary/pd_imitation_summary.json` 已生成
+### 7.1 先看 RX 图
 
-并且满足这些合理性检查：
+你当前最重要的图是：
 
-- prefill 平均延迟随 `prompt_tokens` 增加而上升
-- decode 的 `ms/token` 会随 `context_tokens` 增大而变差
-- `prefill_kv_bytes` 与 `prompt_tokens` 线性相关
-- `decode_required_kv_bytes` 与 `context_tokens` 线性相关
+- [pcie_rx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_restore_imitation_qwen3_8b/summary/pcie_rx_timeline.svg)
 
-如果你进一步做了 offloading 对照，还应额外满足：
+如果你想 imitate “prefill engines must load large volumes of KV-Cache from remote storage”，
+那最值得看的就是：
 
-- `$OFFLOAD_RUN_ROOT/summary/pd_imitation_trace.csv` 已生成
-- `$BASELINE_RUN_ROOT/summary/pd_imitation_compare_report.md` 已生成
-- baseline 和 offloading 没有写到同一个目录里
+- `reuse` 阶段里，RX/H2D 有没有明显抬高
 
-## 15. 第 2 阶段再做什么
+### 7.2 再看 TX 图
 
-如果第 1 阶段稳定，下一步再考虑：
+- [pcie_tx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_restore_imitation_qwen3_8b/summary/pcie_tx_timeline.svg)
 
-- chunk-aware correction
-- 更真实的 prompt 长度分布
-- 更真实的请求到达过程
-- CPU-only server 作为 replay sink
-- vLLM 原生 KV offloading 对照实验
-- LMCache 远端 KV 搬运
+这张图主要用来判断：
 
-第 2 阶段应该消费 `pd_imitation_trace.csv`，而不是替换掉第 1 阶段的数据采集路径。
+- `pressure` 阶段到底有没有把 eviction 压力打起来
+
+### 7.3 请求级 CSV
+
+最有用的数据表是：
+
+- [request_pcie_summary.csv](/Users/daniel/Documents/code/SkyGDR/results/pd_restore_imitation_qwen3_8b/summary/request_pcie_summary.csv)
+
+重点看：
+
+- `phase=pressure`
+  - `peak_tx_GiB_s`
+  - `tx_total_GiB`
+- `phase=reuse`
+  - `peak_rx_GiB_s`
+  - `rx_total_GiB`
+
+## 8. 如果 reuse 阶段 RX 还是不高，通常说明什么
+
+最常见的解释有三个：
+
+1. 主 session 的旧 prefix KV 其实还留在 GPU 上
+2. restore 确实发生了，但被更细粒度地摊平了，没有形成大尖峰
+3. pressure burst 还不够强，没能把主 session 的 prefix KV 真正挤走
+
+这时优先调这几个参数：
+
+- `MAX_NUM_SEQS`
+- `GPU_MEMORY_UTILIZATION`
+- `PRESSURE_BURST_SIZE`
+- `PRESSURE_ROUNDS_PER_TURN`
+- `BASE_PREFIX_TOKENS`
+
+## 9. 这一版不再做什么
+
+这份流程不再支持：
+
+- 旧的 baseline/offload 双结果目录对照
+- 旧的 `pd_imitation_trace.csv`
+- 旧的 `prefill-only / decode-only` 两阶段采样
+- 旧的 `timing-first` 主线
+
+如果你现在要回答的问题是：
+
+- “在高 prefix reuse 的长 session 里，prefill restore 的 H2D 到底有没有被打出来？”
+
+那新的这条主线才是当前仓库里的正确入口。

@@ -6,7 +6,14 @@ import csv
 import json
 import math
 import os
-from typing import Iterable
+from collections import defaultdict
+
+
+PHASE_COLORS = {
+    "warmup": "#4C78A8",
+    "pressure": "#E45756",
+    "reuse": "#54A24B",
+}
 
 
 def ensure_dir(path: str) -> None:
@@ -62,80 +69,122 @@ def load_metrics(path: str) -> list[dict]:
     return out
 
 
-def load_request_window(prefill_csv: str, decode_csv: str) -> dict[str, int]:
-    starts = []
-    ends = []
-    prefill_rows = load_csv(prefill_csv) if prefill_csv else []
-    decode_rows = load_csv(decode_csv) if decode_csv else []
-
-    def window(rows: list[dict[str, str]]) -> tuple[int, int] | None:
-        ok = [r for r in rows if r.get("http_status") == "200" and not r.get("error")]
-        if not ok:
-            return None
-        return (
-            min(to_int(r["submit_ts_unix_ms"]) for r in ok),
-            max(to_int(r["finish_ts_unix_ms"]) for r in ok),
+def load_requests(path: str) -> list[dict]:
+    rows = load_csv(path)
+    out = []
+    for r in rows:
+        if r.get("http_status") != "200" or r.get("error"):
+            continue
+        out.append(
+            {
+                "request_id": r["request_id"],
+                "launch_group": to_int(r["launch_group"]),
+                "phase": r["phase"],
+                "session_id": r["session_id"],
+                "turn_id": to_int(r["turn_id"]),
+                "prompt_tokens": to_int(r["prompt_tokens"]),
+                "reused_prefix_tokens_est": to_int(r["reused_prefix_tokens_est"]),
+                "appended_tokens_est": to_int(r["appended_tokens_est"]),
+                "reuse_ratio_est": to_float(r["reuse_ratio_est"]),
+                "expected_restore": to_int(r["expected_restore"]),
+                "max_tokens": to_int(r["max_tokens"]),
+                "submit_ts_unix_ms": to_int(r["submit_ts_unix_ms"]),
+                "finish_ts_unix_ms": to_int(r["finish_ts_unix_ms"]),
+                "elapsed_ms": to_float(r["elapsed_ms"]),
+                "usage_prompt_tokens": to_int(r["usage_prompt_tokens"], default=-1),
+                "usage_completion_tokens": to_int(r["usage_completion_tokens"], default=-1),
+            }
         )
+    if not out:
+        raise SystemExit("no successful request rows found")
+    return out
 
-    pw = window(prefill_rows)
-    dw = window(decode_rows)
-    if pw:
-        starts.append(pw[0])
-        ends.append(pw[1])
-    if dw:
-        starts.append(dw[0])
-        ends.append(dw[1])
-    if not starts:
-        raise SystemExit("no successful prefill/decode rows found")
 
+def load_windows(requests: list[dict]) -> dict:
     return {
-        "prefill_start_unix_ms": pw[0] if pw else 0,
-        "prefill_end_unix_ms": pw[1] if pw else 0,
-        "decode_start_unix_ms": dw[0] if dw else 0,
-        "decode_end_unix_ms": dw[1] if dw else 0,
-        "window_start_unix_ms": min(starts),
-        "window_end_unix_ms": max(ends),
+        "window_start_unix_ms": min(r["submit_ts_unix_ms"] for r in requests),
+        "window_end_unix_ms": max(r["finish_ts_unix_ms"] for r in requests),
     }
+
+
+def build_group_spans(requests: list[dict]) -> list[dict]:
+    groups: dict[int, list[dict]] = defaultdict(list)
+    for r in requests:
+        groups[r["launch_group"]].append(r)
+    spans = []
+    for launch_group in sorted(groups):
+        rows = groups[launch_group]
+        spans.append(
+            {
+                "launch_group": launch_group,
+                "phase": rows[0]["phase"],
+                "start_unix_ms": min(r["submit_ts_unix_ms"] for r in rows),
+                "end_unix_ms": max(r["finish_ts_unix_ms"] for r in rows),
+                "request_count": len(rows),
+            }
+        )
+    return spans
 
 
 def select_rows(rows: list[dict], start_ms: int, end_ms: int) -> list[dict]:
     out = [r for r in rows if r["ts_unix_ms"] >= start_ms and r["ts_unix_ms"] <= end_ms]
     if len(out) >= 2:
         return out
-    return rows
+    return []
 
 
-def summarize_window(rows: list[dict], start_ms: int, end_ms: int) -> dict:
+def summarize_single_interval(rows: list[dict], start_ms: int, end_ms: int) -> dict:
     sel = select_rows(rows, start_ms, end_ms)
     if not sel:
         return {}
-    duration_s = max(0.0, (end_ms - start_ms) / 1000.0)
     first = sel[0]
     last = sel[-1]
-    tx_total = max(0.0, last["pcie_tx_cum_GiB"] - first["pcie_tx_cum_GiB"])
-    rx_total = max(0.0, last["pcie_rx_cum_GiB"] - first["pcie_rx_cum_GiB"])
-    total_total = max(0.0, last["pcie_total_cum_GiB"] - first["pcie_total_cum_GiB"])
-    peak_tx = max(sel, key=lambda r: r["pcie_tx_GiB_s"])
-    peak_rx = max(sel, key=lambda r: r["pcie_rx_GiB_s"])
-    peak_total = max(sel, key=lambda r: r["pcie_total_GiB_s"])
     return {
-        "start_unix_ms": start_ms,
-        "end_unix_ms": end_ms,
-        "duration_s": duration_s,
+        "duration_s": max(0.0, (end_ms - start_ms) / 1000.0),
         "num_samples": len(sel),
+        "tx_total_GiB": max(0.0, last["pcie_tx_cum_GiB"] - first["pcie_tx_cum_GiB"]),
+        "rx_total_GiB": max(0.0, last["pcie_rx_cum_GiB"] - first["pcie_rx_cum_GiB"]),
+        "total_transfer_GiB": max(0.0, last["pcie_total_cum_GiB"] - first["pcie_total_cum_GiB"]),
+        "peak_tx_GiB_s": max((r["pcie_tx_GiB_s"] for r in sel), default=0.0),
+        "peak_rx_GiB_s": max((r["pcie_rx_GiB_s"] for r in sel), default=0.0),
+        "peak_total_GiB_s": max((r["pcie_total_GiB_s"] for r in sel), default=0.0),
+        "peak_tx_row": max(sel, key=lambda r: r["pcie_tx_GiB_s"]),
+        "peak_rx_row": max(sel, key=lambda r: r["pcie_rx_GiB_s"]),
+        "peak_total_row": max(sel, key=lambda r: r["pcie_total_GiB_s"]),
+        "link_ref_GiB_s": first["pcie_link_ref_GiB_s"],
+    }
+
+
+def summarize_intervals(rows: list[dict], intervals: list[tuple[int, int]]) -> dict:
+    if not intervals:
+        return {}
+    stats = [summarize_single_interval(rows, start, end) for start, end in intervals]
+    stats = [s for s in stats if s]
+    if not stats:
+        return {}
+    duration_s = sum(s["duration_s"] for s in stats)
+    tx_total = sum(s["tx_total_GiB"] for s in stats)
+    rx_total = sum(s["rx_total_GiB"] for s in stats)
+    total_transfer = sum(s["total_transfer_GiB"] for s in stats)
+    peak_tx_stat = max(stats, key=lambda s: s["peak_tx_GiB_s"])
+    peak_rx_stat = max(stats, key=lambda s: s["peak_rx_GiB_s"])
+    peak_total_stat = max(stats, key=lambda s: s["peak_total_GiB_s"])
+    return {
+        "duration_s": duration_s,
+        "num_samples": sum(s["num_samples"] for s in stats),
         "tx_total_GiB": tx_total,
         "rx_total_GiB": rx_total,
-        "total_transfer_GiB": total_total,
+        "total_transfer_GiB": total_transfer,
         "avg_tx_GiB_s": (tx_total / duration_s) if duration_s > 0 else 0.0,
         "avg_rx_GiB_s": (rx_total / duration_s) if duration_s > 0 else 0.0,
-        "avg_total_GiB_s": (total_total / duration_s) if duration_s > 0 else 0.0,
-        "peak_tx_GiB_s": peak_tx["pcie_tx_GiB_s"],
-        "peak_tx_t_ms": peak_tx["ts_unix_ms"] - start_ms,
-        "peak_rx_GiB_s": peak_rx["pcie_rx_GiB_s"],
-        "peak_rx_t_ms": peak_rx["ts_unix_ms"] - start_ms,
-        "peak_total_GiB_s": peak_total["pcie_total_GiB_s"],
-        "peak_total_t_ms": peak_total["ts_unix_ms"] - start_ms,
-        "link_ref_GiB_s": first["pcie_link_ref_GiB_s"],
+        "avg_total_GiB_s": (total_transfer / duration_s) if duration_s > 0 else 0.0,
+        "peak_tx_GiB_s": peak_tx_stat["peak_tx_GiB_s"],
+        "peak_rx_GiB_s": peak_rx_stat["peak_rx_GiB_s"],
+        "peak_total_GiB_s": peak_total_stat["peak_total_GiB_s"],
+        "peak_tx_t_ms": peak_tx_stat["peak_tx_row"]["ts_unix_ms"] - intervals[0][0],
+        "peak_rx_t_ms": peak_rx_stat["peak_rx_row"]["ts_unix_ms"] - intervals[0][0],
+        "peak_total_t_ms": peak_total_stat["peak_total_row"]["ts_unix_ms"] - intervals[0][0],
+        "link_ref_GiB_s": stats[0]["link_ref_GiB_s"],
     }
 
 
@@ -149,38 +198,29 @@ def escape_xml(text: str) -> str:
     )
 
 
-def _window_rect(start_ms: int, end_ms: int, base_ms: int, x_fn, y: float, h: float, color: str, label: str) -> list[str]:
-    if end_ms <= start_ms:
-        return []
-    x1 = x_fn((start_ms - base_ms) / 1000.0)
-    x2 = x_fn((end_ms - base_ms) / 1000.0)
-    if x2 <= x1:
-        return []
-    return [
-        f'<rect x="{x1:.1f}" y="{y:.1f}" width="{(x2 - x1):.1f}" height="{h:.1f}" fill="{color}" opacity="0.10"/>',
-        f'<text x="{(x1 + x2)/2:.1f}" y="{y + 16:.1f}" text-anchor="middle" font-size="12" fill="{color}" font-family="Helvetica, Arial, sans-serif">{escape_xml(label)}</text>',
-    ]
-
-
-def build_svg(rows: list[dict], windows: dict[str, int], out_svg: str, title: str) -> None:
-    if not rows:
-        raise SystemExit("no metrics rows for svg")
-
+def build_main_svg(rows: list[dict], spans: list[dict], windows: dict[str, int], out_svg: str, title: str) -> None:
     width = 1100
-    height = 920
+    height = 820
     margin_left = 86
     margin_right = 24
     margin_top = 44
     margin_bottom = 54
     plot_w = width - margin_left - margin_right
-    panel_h = 210
-    gap = 34
+    panel_h = 180
+    gap = 32
 
     base_ts = windows["window_start_unix_ms"]
     t_s = [(r["ts_unix_ms"] - base_ts) / 1000.0 for r in rows]
     max_t = max(t_s) if t_s else 1.0
     if max_t <= 0:
         max_t = 1.0
+
+    max_total = max((r["pcie_total_GiB_s"] for r in rows), default=1.0) * 1.10
+    max_tx = max((r["pcie_tx_GiB_s"] for r in rows), default=1.0) * 1.10
+    max_rx = max((r["pcie_rx_GiB_s"] for r in rows), default=1.0) * 1.10
+    max_total = max(max_total, 1.0)
+    max_tx = max(max_tx, 1.0)
+    max_rx = max(max_rx, 1.0)
 
     def x_fn(x: float) -> float:
         return margin_left + (x / max_t) * plot_w
@@ -190,46 +230,24 @@ def build_svg(rows: list[dict], windows: dict[str, int], out_svg: str, title: st
             return top + panel_h - (y / max_y) * panel_h if max_y > 0 else top + panel_h
         return y_fn
 
-    max_bw = max(max(r["pcie_tx_GiB_s"], r["pcie_rx_GiB_s"], r["pcie_total_GiB_s"]) for r in rows) * 1.10
-    max_bw = max(max_bw, 1.0)
-    max_cum = max(r["pcie_total_cum_GiB"] for r in rows)
-    min_tx_cum = rows[0]["pcie_tx_cum_GiB"]
-    min_rx_cum = rows[0]["pcie_rx_cum_GiB"]
-    min_total_cum = rows[0]["pcie_total_cum_GiB"]
-    max_cum = max(
-        r["pcie_tx_cum_GiB"] - min_tx_cum for r in rows
-        if not math.isnan(r["pcie_tx_cum_GiB"])
-    )
-    max_cum = max(
-        max_cum,
-        max(r["pcie_rx_cum_GiB"] - min_rx_cum for r in rows if not math.isnan(r["pcie_rx_cum_GiB"])),
-        max(r["pcie_total_cum_GiB"] - min_total_cum for r in rows if not math.isnan(r["pcie_total_cum_GiB"])),
-        1.0,
-    ) * 1.10
-    max_misc = max(
-        max(r["gpu_mem_used_GiB"] for r in rows if not math.isnan(r["gpu_mem_used_GiB"])),
-        1.0,
-    ) * 1.10
-
-    y_bw = y_fn_factory(margin_top + 24, max_bw)
-    y_cum = y_fn_factory(margin_top + 24 + panel_h + gap, max_cum)
-    y_misc = y_fn_factory(margin_top + 24 + (panel_h + gap) * 2, max_misc)
-
     panels = [
-        {"top": margin_top + 24, "y_fn": y_bw, "max_y": max_bw, "ylabel": "PCIe GiB/s"},
-        {"top": margin_top + 24 + panel_h + gap, "y_fn": y_cum, "max_y": max_cum, "ylabel": "Cum GiB"},
-        {"top": margin_top + 24 + (panel_h + gap) * 2, "y_fn": y_misc, "max_y": max_misc, "ylabel": "GPU mem GiB"},
+        ("pcie_total_GiB_s", "Total GiB/s", max_total, "#54A24B"),
+        ("pcie_tx_GiB_s", "TX GiB/s", max_tx, "#4C78A8"),
+        ("pcie_rx_GiB_s", "RX GiB/s", max_rx, "#F58518"),
     ]
 
-    parts: list[str] = []
-    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">')
-    parts.append(f'<rect width="{width}" height="{height}" fill="white"/>')
-    parts.append(f'<text x="{margin_left}" y="26" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif">{escape_xml(title)}</text>')
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        f'<rect width="{width}" height="{height}" fill="white"/>',
+        f'<text x="{margin_left}" y="26" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif">{escape_xml(title)}</text>',
+    ]
 
-    for panel in panels:
-        top = panel["top"]
-        y_fn = panel["y_fn"]
-        max_y = panel["max_y"]
+    for idx, (key, ylabel, max_y, color) in enumerate(panels):
+        top = margin_top + 24 + idx * (panel_h + gap)
+
+        def y_fn(y: float, _top=top, _max=max_y):
+            return _top + panel_h - (y / _max) * panel_h if _max > 0 else _top + panel_h
+
         for i in range(6):
             y_val = max_y * i / 5.0
             y_px = y_fn(y_val)
@@ -238,57 +256,111 @@ def build_svg(rows: list[dict], windows: dict[str, int], out_svg: str, title: st
         parts.append(f'<line x1="{margin_left}" y1="{top + panel_h:.1f}" x2="{width - margin_right}" y2="{top + panel_h:.1f}" stroke="#222" stroke-width="1.4"/>')
         parts.append(f'<line x1="{margin_left}" y1="{top:.1f}" x2="{margin_left}" y2="{top + panel_h:.1f}" stroke="#222" stroke-width="1.4"/>')
         parts.append(
-            f'<text x="24" y="{top + panel_h/2:.1f}" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif" transform="rotate(-90 24,{top + panel_h/2:.1f})">{escape_xml(panel["ylabel"])}</text>'
+            f'<text x="24" y="{top + panel_h/2:.1f}" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif" transform="rotate(-90 24,{top + panel_h/2:.1f})">{escape_xml(ylabel)}</text>'
         )
-        parts.extend(_window_rect(windows["prefill_start_unix_ms"], windows["prefill_end_unix_ms"], base_ts, x_fn, top, panel_h, "#4C78A8", "prefill"))
-        parts.extend(_window_rect(windows["decode_start_unix_ms"], windows["decode_end_unix_ms"], base_ts, x_fn, top, panel_h, "#E45756", "decode"))
+        for span in spans:
+            x1 = x_fn((span["start_unix_ms"] - base_ts) / 1000.0)
+            x2 = x_fn((span["end_unix_ms"] - base_ts) / 1000.0)
+            color_span = PHASE_COLORS.get(span["phase"], "#bbbbbb")
+            parts.append(
+                f'<rect x="{x1:.1f}" y="{top:.1f}" width="{max(0.5, x2 - x1):.1f}" height="{panel_h:.1f}" fill="{color_span}" opacity="0.08"/>'
+            )
 
-    # x ticks
+        pts = [(x_fn(t), y_fn(r[key])) for t, r in zip(t_s, rows)]
+        if pts:
+            path = " ".join([f"M {pts[0][0]:.1f} {pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in pts[1:]])
+            parts.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>')
+
+    bottom_top = margin_top + 24 + 2 * (panel_h + gap)
     for i in range(7):
         tx = max_t * i / 6.0
         x = x_fn(tx)
-        parts.append(f'<line x1="{x:.1f}" y1="{panels[-1]["top"]:.1f}" x2="{x:.1f}" y2="{panels[-1]["top"] + panel_h:.1f}" stroke="#f2f2f2" stroke-width="1"/>')
+        parts.append(f'<line x1="{x:.1f}" y1="{margin_top + 24:.1f}" x2="{x:.1f}" y2="{bottom_top + panel_h:.1f}" stroke="#f2f2f2" stroke-width="1"/>')
         parts.append(f'<text x="{x:.1f}" y="{height - 18}" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{tx:.1f}")}</text>')
     parts.append(f'<text x="{margin_left + plot_w/2:.1f}" y="{height - 2}" text-anchor="middle" font-size="16" fill="#222" font-family="Helvetica, Arial, sans-serif">time since first request submit (s)</text>')
 
-    def add_line(points: Iterable[tuple[float, float]], color: str, width_px: float = 2.4) -> None:
-        pts = list(points)
-        if not pts:
-            return
-        path = " ".join([f"M {pts[0][0]:.1f} {pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in pts[1:]])
-        parts.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="{width_px}" stroke-linejoin="round" stroke-linecap="round"/>')
-
-    # panel 1
-    add_line([(x_fn(t), y_bw(r["pcie_tx_GiB_s"])) for t, r in zip(t_s, rows)], "#4C78A8")
-    add_line([(x_fn(t), y_bw(r["pcie_rx_GiB_s"])) for t, r in zip(t_s, rows)], "#F58518")
-    add_line([(x_fn(t), y_bw(r["pcie_total_GiB_s"])) for t, r in zip(t_s, rows)], "#54A24B", 2.8)
-    # panel 2
-    add_line([(x_fn(t), y_cum(r["pcie_tx_cum_GiB"] - min_tx_cum)) for t, r in zip(t_s, rows)], "#4C78A8")
-    add_line([(x_fn(t), y_cum(r["pcie_rx_cum_GiB"] - min_rx_cum)) for t, r in zip(t_s, rows)], "#F58518")
-    add_line([(x_fn(t), y_cum(r["pcie_total_cum_GiB"] - min_total_cum)) for t, r in zip(t_s, rows)], "#54A24B", 2.8)
-    # panel 3
-    add_line([(x_fn(t), y_misc(r["gpu_mem_used_GiB"])) for t, r in zip(t_s, rows)], "#B279A2", 2.8)
-
-    legend = [
-        ("tx", "#4C78A8"),
-        ("rx", "#F58518"),
-        ("tx+rx", "#54A24B"),
-        ("gpu_mem_used", "#B279A2"),
-    ]
-    lx = width - 220
-    ly = 44
-    parts.append(f'<rect x="{lx}" y="{ly}" width="190" height="114" rx="8" fill="#fff" stroke="#ddd"/>')
-    for i, (label, color) in enumerate(legend):
-        yy = ly + 22 + i * 22
-        parts.append(f'<line x1="{lx + 12}" y1="{yy}" x2="{lx + 36}" y2="{yy}" stroke="{color}" stroke-width="3"/>')
-        parts.append(f'<text x="{lx + 46}" y="{yy + 4}" font-size="13" fill="#333" font-family="Helvetica, Arial, sans-serif">{escape_xml(label)}</text>')
+    legend_x = width - 250
+    legend_y = 44
+    legend_items = [("warmup", PHASE_COLORS["warmup"]), ("pressure", PHASE_COLORS["pressure"]), ("reuse", PHASE_COLORS["reuse"])]
+    parts.append(f'<rect x="{legend_x}" y="{legend_y}" width="220" height="92" rx="8" fill="#fff" stroke="#ddd"/>')
+    for idx, (label, color) in enumerate(legend_items):
+        yy = legend_y + 22 + idx * 22
+        parts.append(f'<rect x="{legend_x + 12}" y="{yy - 8}" width="16" height="12" fill="{color}" opacity="0.35"/>')
+        parts.append(f'<text x="{legend_x + 40}" y="{yy + 2}" font-size="13" fill="#333" font-family="Helvetica, Arial, sans-serif">{escape_xml(label)}</text>')
 
     parts.append("</svg>")
     with open(out_svg, "w", encoding="utf-8") as f:
         f.write("\n".join(parts))
 
 
-def write_window_csv(rows: list[dict], windows: dict[str, int], out_csv: str) -> None:
+def build_direction_svg(rows: list[dict], spans: list[dict], windows: dict[str, int], out_svg: str, title: str, key: str, color: str, ylabel: str) -> None:
+    width = 1100
+    height = 420
+    margin_left = 86
+    margin_right = 24
+    margin_top = 44
+    margin_bottom = 54
+    plot_w = width - margin_left - margin_right
+    plot_h = height - margin_top - margin_bottom
+
+    base_ts = windows["window_start_unix_ms"]
+    t_s = [(r["ts_unix_ms"] - base_ts) / 1000.0 for r in rows]
+    max_t = max(t_s) if t_s else 1.0
+    if max_t <= 0:
+        max_t = 1.0
+
+    max_y = max((r[key] for r in rows if not math.isnan(r[key])), default=1.0) * 1.10
+    max_y = max(max_y, 1.0)
+
+    def x_fn(x: float) -> float:
+        return margin_left + (x / max_t) * plot_w
+
+    def y_fn(y: float) -> float:
+        return margin_top + plot_h - (y / max_y) * plot_h if max_y > 0 else margin_top + plot_h
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        f'<rect width="{width}" height="{height}" fill="white"/>',
+        f'<text x="{margin_left}" y="26" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif">{escape_xml(title)}</text>',
+    ]
+
+    for i in range(6):
+        y_val = max_y * i / 5.0
+        y_px = y_fn(y_val)
+        parts.append(f'<line x1="{margin_left}" y1="{y_px:.1f}" x2="{width - margin_right}" y2="{y_px:.1f}" stroke="#ececec" stroke-width="1"/>')
+        parts.append(f'<text x="{margin_left - 10}" y="{y_px + 4:.1f}" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{y_val:.1f}")}</text>')
+    parts.append(f'<line x1="{margin_left}" y1="{margin_top + plot_h:.1f}" x2="{width - margin_right}" y2="{margin_top + plot_h:.1f}" stroke="#222" stroke-width="1.4"/>')
+    parts.append(f'<line x1="{margin_left}" y1="{margin_top:.1f}" x2="{margin_left}" y2="{margin_top + plot_h:.1f}" stroke="#222" stroke-width="1.4"/>')
+    parts.append(
+        f'<text x="24" y="{margin_top + plot_h/2:.1f}" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif" transform="rotate(-90 24,{margin_top + plot_h/2:.1f})">{escape_xml(ylabel)}</text>'
+    )
+
+    for span in spans:
+        x1 = x_fn((span["start_unix_ms"] - base_ts) / 1000.0)
+        x2 = x_fn((span["end_unix_ms"] - base_ts) / 1000.0)
+        color_span = PHASE_COLORS.get(span["phase"], "#bbbbbb")
+        parts.append(
+            f'<rect x="{x1:.1f}" y="{margin_top:.1f}" width="{max(0.5, x2 - x1):.1f}" height="{plot_h:.1f}" fill="{color_span}" opacity="0.08"/>'
+        )
+
+    pts = [(x_fn(t), y_fn(r[key])) for t, r in zip(t_s, rows)]
+    if pts:
+        path = " ".join([f"M {pts[0][0]:.1f} {pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in pts[1:]])
+        parts.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>')
+
+    for i in range(7):
+        tx = max_t * i / 6.0
+        x = x_fn(tx)
+        parts.append(f'<line x1="{x:.1f}" y1="{margin_top:.1f}" x2="{x:.1f}" y2="{margin_top + plot_h:.1f}" stroke="#f2f2f2" stroke-width="1"/>')
+        parts.append(f'<text x="{x:.1f}" y="{height - 18}" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{tx:.1f}")}</text>')
+    parts.append(f'<text x="{margin_left + plot_w/2:.1f}" y="{height - 2}" text-anchor="middle" font-size="16" fill="#222" font-family="Helvetica, Arial, sans-serif">time since first request submit (s)</text>')
+
+    parts.append("</svg>")
+    with open(out_svg, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+
+def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int], out_csv: str) -> None:
     ensure_dir(os.path.dirname(out_csv) or ".")
     with open(out_csv, "w", newline="") as f:
         w = csv.writer(f)
@@ -311,13 +383,14 @@ def write_window_csv(rows: list[dict], windows: dict[str, int], out_csv: str) ->
         ])
         base_ts = windows["window_start_unix_ms"]
         for r in rows:
-            if r["ts_unix_ms"] < base_ts or r["ts_unix_ms"] > windows["window_end_unix_ms"]:
+            if r["ts_unix_ms"] < windows["window_start_unix_ms"] or r["ts_unix_ms"] > windows["window_end_unix_ms"]:
                 continue
-            phase = "idle"
-            if windows["prefill_start_unix_ms"] and r["ts_unix_ms"] >= windows["prefill_start_unix_ms"] and r["ts_unix_ms"] <= windows["prefill_end_unix_ms"]:
-                phase = "prefill"
-            elif windows["decode_start_unix_ms"] and r["ts_unix_ms"] >= windows["decode_start_unix_ms"] and r["ts_unix_ms"] <= windows["decode_end_unix_ms"]:
-                phase = "decode"
+            active_phases = [
+                span["phase"]
+                for span in spans
+                if r["ts_unix_ms"] >= span["start_unix_ms"] and r["ts_unix_ms"] <= span["end_unix_ms"]
+            ]
+            phase = "+".join(sorted(set(active_phases))) if active_phases else "idle"
             w.writerow([
                 r["ts_unix_ms"],
                 f"{(r['ts_unix_ms'] - base_ts) / 1000.0:.6f}",
@@ -337,26 +410,97 @@ def write_window_csv(rows: list[dict], windows: dict[str, int], out_csv: str) ->
             ])
 
 
-def write_summary_md(out_md: str, run_label: str, windows: dict[str, int], full_stats: dict, prefill_stats: dict, decode_stats: dict, svg_path: str) -> None:
-    rel_svg = os.path.relpath(svg_path, os.path.dirname(out_md))
+def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: str) -> None:
+    ensure_dir(os.path.dirname(out_csv) or ".")
+    with open(out_csv, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "request_id",
+            "phase",
+            "session_id",
+            "turn_id",
+            "launch_group",
+            "prompt_tokens",
+            "reused_prefix_tokens_est",
+            "appended_tokens_est",
+            "reuse_ratio_est",
+            "expected_restore",
+            "elapsed_ms",
+            "tx_total_GiB",
+            "rx_total_GiB",
+            "total_transfer_GiB",
+            "peak_tx_GiB_s",
+            "peak_rx_GiB_s",
+            "peak_total_GiB_s",
+        ])
+        for r in requests:
+            st = summarize_single_interval(metrics_rows, r["submit_ts_unix_ms"], r["finish_ts_unix_ms"])
+            if not st:
+                continue
+            w.writerow([
+                r["request_id"],
+                r["phase"],
+                r["session_id"],
+                r["turn_id"],
+                r["launch_group"],
+                r["prompt_tokens"],
+                r["reused_prefix_tokens_est"],
+                r["appended_tokens_est"],
+                f"{r['reuse_ratio_est']:.6f}",
+                r["expected_restore"],
+                f"{r['elapsed_ms']:.6f}",
+                f"{st['tx_total_GiB']:.6f}",
+                f"{st['rx_total_GiB']:.6f}",
+                f"{st['total_transfer_GiB']:.6f}",
+                f"{st['peak_tx_GiB_s']:.6f}",
+                f"{st['peak_rx_GiB_s']:.6f}",
+                f"{st['peak_total_GiB_s']:.6f}",
+            ])
+
+
+def write_summary_md(
+    out_md: str,
+    run_label: str,
+    windows: dict[str, int],
+    full_stats: dict,
+    phase_stats: dict[str, dict],
+    spans: list[dict],
+    request_summary_csv: str,
+    total_svg: str,
+    tx_svg: str,
+    rx_svg: str,
+) -> None:
+    rel_total = os.path.relpath(total_svg, os.path.dirname(out_md))
+    rel_tx = os.path.relpath(tx_svg, os.path.dirname(out_md))
+    rel_rx = os.path.relpath(rx_svg, os.path.dirname(out_md))
+    rel_req = os.path.relpath(request_summary_csv, os.path.dirname(out_md))
+
     lines = []
-    lines.append(f"# PCIe Offload Observation Report: {run_label}")
+    lines.append(f"# Prefill-Restore PCIe Report: {run_label}")
     lines.append("")
     lines.append("## 1. 观测范围")
     lines.append("")
     lines.append(f"- full window start: `{windows['window_start_unix_ms']}`")
     lines.append(f"- full window end: `{windows['window_end_unix_ms']}`")
-    lines.append(f"- prefill window: `{windows['prefill_start_unix_ms']} -> {windows['prefill_end_unix_ms']}`")
-    lines.append(f"- decode window: `{windows['decode_start_unix_ms']} -> {windows['decode_end_unix_ms']}`")
+    lines.append(f"- launch groups: `{len(spans)}`")
     lines.append("")
-    lines.append("这里记录的是 GPU 侧 NVML 提供的 PCIe TX/RX moving-average throughput。")
+    lines.append("本报告针对的是：")
     lines.append("")
-    lines.append("- 最稳妥的主指标是 `pcie_total_GiB_s = tx + rx`。")
-    lines.append("- 在很多平台上，host->GPU 的 restore/offload-return 往往更容易体现在 GPU PCIe RX 上，但方向语义最好结合实测一起判断。")
+    lines.append("- `warmup`：先把主 trajectory 的 prefix cache 建起来")
+    lines.append("- `pressure`：插入长请求 burst，强制制造 eviction 压力")
+    lines.append("- `reuse`：提交下一轮高复用请求，观察 prefill restore 是否拉高 RX/H2D")
     lines.append("")
     lines.append("## 2. 时序图")
     lines.append("")
-    lines.append(f"![pcie timeline]({escape_xml(rel_svg)})")
+    lines.append(f"![pcie timeline]({escape_xml(rel_total)})")
+    lines.append("")
+    lines.append("### TX")
+    lines.append("")
+    lines.append(f"![pcie tx timeline]({escape_xml(rel_tx)})")
+    lines.append("")
+    lines.append("### RX")
+    lines.append("")
+    lines.append(f"![pcie rx timeline]({escape_xml(rel_rx)})")
     lines.append("")
     lines.append("## 3. 全窗口统计")
     lines.append("")
@@ -367,52 +511,80 @@ def write_summary_md(out_md: str, run_label: str, windows: dict[str, int], full_
     lines.append(f"- avg TX bandwidth: `{full_stats['avg_tx_GiB_s']:.3f} GiB/s`")
     lines.append(f"- avg RX bandwidth: `{full_stats['avg_rx_GiB_s']:.3f} GiB/s`")
     lines.append(f"- avg bidirectional bandwidth: `{full_stats['avg_total_GiB_s']:.3f} GiB/s`")
-    lines.append(f"- peak TX bandwidth: `{full_stats['peak_tx_GiB_s']:.3f} GiB/s` at `{full_stats['peak_tx_t_ms'] / 1000.0:.3f} s`")
-    lines.append(f"- peak RX bandwidth: `{full_stats['peak_rx_GiB_s']:.3f} GiB/s` at `{full_stats['peak_rx_t_ms'] / 1000.0:.3f} s`")
-    lines.append(f"- peak bidirectional bandwidth: `{full_stats['peak_total_GiB_s']:.3f} GiB/s` at `{full_stats['peak_total_t_ms'] / 1000.0:.3f} s`")
+    lines.append(f"- peak TX bandwidth: `{full_stats['peak_tx_GiB_s']:.3f} GiB/s`")
+    lines.append(f"- peak RX bandwidth: `{full_stats['peak_rx_GiB_s']:.3f} GiB/s`")
+    lines.append(f"- peak total bandwidth: `{full_stats['peak_total_GiB_s']:.3f} GiB/s`")
     lines.append("")
     lines.append("## 4. 分阶段统计")
     lines.append("")
-    lines.append("| phase | duration (s) | tx total (GiB) | rx total (GiB) | total (GiB) | avg total GiB/s | peak total GiB/s |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
-    for name, st in [("prefill", prefill_stats), ("decode", decode_stats), ("full", full_stats)]:
+    lines.append("| phase | duration (s) | tx total (GiB) | rx total (GiB) | total (GiB) | avg tx GiB/s | avg rx GiB/s | avg total GiB/s | peak tx GiB/s | peak rx GiB/s |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for phase in ["warmup", "pressure", "reuse"]:
+        st = phase_stats.get(phase) or {}
+        if not st:
+            continue
         lines.append(
-            f"| {name} | {st['duration_s']:.3f} | {st['tx_total_GiB']:.3f} | {st['rx_total_GiB']:.3f} | {st['total_transfer_GiB']:.3f} | {st['avg_total_GiB_s']:.3f} | {st['peak_total_GiB_s']:.3f} |"
+            f"| {phase} | {st['duration_s']:.3f} | {st['tx_total_GiB']:.3f} | {st['rx_total_GiB']:.3f} | {st['total_transfer_GiB']:.3f} | {st['avg_tx_GiB_s']:.3f} | {st['avg_rx_GiB_s']:.3f} | {st['avg_total_GiB_s']:.3f} | {st['peak_tx_GiB_s']:.3f} | {st['peak_rx_GiB_s']:.3f} |"
         )
     lines.append("")
-    lines.append("## 5. 解读建议")
+    lines.append("## 5. 请求级汇总")
     lines.append("")
-    lines.append("- 如果你要抓“offloading 开始到最后 restore”的总体量，优先看 `full` 和 `decode` 的 `total_transfer_GiB`。")
-    lines.append("- 如果你要抓最容易体现 restore 的瞬时冲击，优先看 `decode` 窗口内的 `peak RX` 和 `peak total`。")
-    lines.append("- 如果 `total_transfer_GiB` 已经不小，但时间指标仍几乎不变，说明当前 offloading 流量可能存在，但还不足以成为端到端瓶颈。")
+    lines.append(f"- request summary csv: `{escape_xml(rel_req)}`")
+    lines.append("")
+    lines.append("重点建议：")
+    lines.append("")
+    lines.append("- 看 `reuse` 请求的 `peak_rx_GiB_s` 和 `rx_total_GiB`，这是最直接的 restore 候选信号。")
+    lines.append("- 看 `pressure` 请求的 `peak_tx_GiB_s` 和 `tx_total_GiB`，这是 eviction 压力是否真的打起来的主指标。")
+    lines.append("- 如果 `reuse` 阶段 RX 仍然低，通常意味着历史 prefix 还留在 GPU，或者 restore 被更细粒度地摊平了。")
     lines.append("")
     with open(out_md, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Analyze GPU PCIe metrics for PD offload runs.")
+def parse_args():
+    ap = argparse.ArgumentParser(description="Analyze PCIe metrics for the restore-focused trajectory workload.")
     ap.add_argument("--metrics_csv", required=True)
-    ap.add_argument("--prefill_csv", required=True)
-    ap.add_argument("--decode_csv", required=True)
-    ap.add_argument("--run_label", default="offload_run")
+    ap.add_argument("--request_csv", required=True)
+    ap.add_argument("--run_label", default="restore_run")
     ap.add_argument("--out_svg", required=True)
     ap.add_argument("--out_md", required=True)
     ap.add_argument("--out_csv", required=True)
     ap.add_argument("--out_json", default="")
-    args = ap.parse_args()
+    return ap.parse_args()
 
+
+def main() -> int:
+    args = parse_args()
     metrics_rows = load_metrics(args.metrics_csv)
-    windows = load_request_window(args.prefill_csv, args.decode_csv)
-    selected_rows = select_rows(metrics_rows, windows["window_start_unix_ms"], windows["window_end_unix_ms"])
-    full_stats = summarize_window(metrics_rows, windows["window_start_unix_ms"], windows["window_end_unix_ms"])
-    prefill_stats = summarize_window(metrics_rows, windows["prefill_start_unix_ms"], windows["prefill_end_unix_ms"])
-    decode_stats = summarize_window(metrics_rows, windows["decode_start_unix_ms"], windows["decode_end_unix_ms"])
+    requests = load_requests(args.request_csv)
+    windows = load_windows(requests)
+    spans = build_group_spans(requests)
+    selected_rows = [
+        r for r in metrics_rows
+        if r["ts_unix_ms"] >= windows["window_start_unix_ms"] and r["ts_unix_ms"] <= windows["window_end_unix_ms"]
+    ]
+    if not selected_rows:
+        raise SystemExit("no metrics rows overlap with request window")
 
-    ensure_dir(os.path.dirname(args.out_svg) or ".")
-    build_svg(selected_rows, windows, args.out_svg, f"PCIe Offload Timeline: {args.run_label}")
-    write_window_csv(metrics_rows, windows, args.out_csv)
-    write_summary_md(args.out_md, args.run_label, windows, full_stats, prefill_stats, decode_stats, args.out_svg)
+    full_stats = summarize_intervals(metrics_rows, [(windows["window_start_unix_ms"], windows["window_end_unix_ms"])])
+    phase_intervals: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    for span in spans:
+        phase_intervals[span["phase"]].append((span["start_unix_ms"], span["end_unix_ms"]))
+    phase_stats = {phase: summarize_intervals(metrics_rows, intervals) for phase, intervals in phase_intervals.items()}
+
+    out_dir = os.path.dirname(args.out_svg) or "."
+    tx_svg = os.path.join(out_dir, "pcie_tx_timeline.svg")
+    rx_svg = os.path.join(out_dir, "pcie_rx_timeline.svg")
+    request_summary_csv = os.path.join(out_dir, "request_pcie_summary.csv")
+
+    ensure_dir(out_dir)
+    build_main_svg(selected_rows, spans, windows, args.out_svg, f"PCIe Timeline: {args.run_label}")
+    build_direction_svg(selected_rows, spans, windows, tx_svg, f"PCIe TX Timeline: {args.run_label}", "pcie_tx_GiB_s", "#4C78A8", "TX GiB/s")
+    build_direction_svg(selected_rows, spans, windows, rx_svg, f"PCIe RX Timeline: {args.run_label}", "pcie_rx_GiB_s", "#F58518", "RX GiB/s")
+    write_window_csv(metrics_rows, spans, windows, args.out_csv)
+    write_request_csv(metrics_rows, requests, request_summary_csv)
+    write_summary_md(args.out_md, args.run_label, windows, full_stats, phase_stats, spans, request_summary_csv, args.out_svg, tx_svg, rx_svg)
+
     if args.out_json:
         ensure_dir(os.path.dirname(args.out_json) or ".")
         with open(args.out_json, "w", encoding="utf-8") as f:
@@ -421,16 +593,20 @@ def main() -> int:
                     "run_label": args.run_label,
                     "windows": windows,
                     "full": full_stats,
-                    "prefill": prefill_stats,
-                    "decode": decode_stats,
+                    "phases": phase_stats,
+                    "launch_groups": spans,
+                    "request_summary_csv": request_summary_csv,
                 },
                 f,
                 indent=2,
             )
 
     print(f"[ok] wrote {args.out_svg}")
+    print(f"[ok] wrote {tx_svg}")
+    print(f"[ok] wrote {rx_svg}")
     print(f"[ok] wrote {args.out_md}")
     print(f"[ok] wrote {args.out_csv}")
+    print(f"[ok] wrote {request_summary_csv}")
     if args.out_json:
         print(f"[ok] wrote {args.out_json}")
     return 0
