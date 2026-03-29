@@ -4,15 +4,15 @@
 <line x1="86" y1="478.0" x2="932" y2="478.0" stroke="#e6e6e6" stroke-width="1"/>
 <text x="76" y="482.0" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">0.0</text>
 <line x1="86" y1="393.6" x2="932" y2="393.6" stroke="#e6e6e6" stroke-width="1"/>
-<text x="76" y="397.6" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">3194.1</text>
+<text x="76" y="397.6" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">4720.2</text>
 <line x1="86" y1="309.2" x2="932" y2="309.2" stroke="#e6e6e6" stroke-width="1"/>
-<text x="76" y="313.2" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">6388.2</text>
+<text x="76" y="313.2" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">9440.4</text>
 <line x1="86" y1="224.8" x2="932" y2="224.8" stroke="#e6e6e6" stroke-width="1"/>
-<text x="76" y="228.8" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">9582.3</text>
+<text x="76" y="228.8" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">14160.6</text>
 <line x1="86" y1="140.4" x2="932" y2="140.4" stroke="#e6e6e6" stroke-width="1"/>
-<text x="76" y="144.4" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">12776.4</text>
+<text x="76" y="144.4" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">18880.8</text>
 <line x1="86" y1="56.0" x2="932" y2="56.0" stroke="#e6e6e6" stroke-width="1"/>
-<text x="76" y="60.0" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">15970.5</text>
+<text x="76" y="60.0" text-anchor="end" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">23601.1</text>
 <line x1="86.0" y1="56" x2="86.0" y2="478" stroke="#f0f0f0" stroke-width="1"/>
 <text x="86.0" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">2048</text>
 <line x1="151.1" y1="56" x2="151.1" y2="478" stroke="#f0f0f0" stroke-width="1"/>
@@ -27,12 +27,12 @@
 <text x="932.0" y="502" text-anchor="middle" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">28672</text>
 <line x1="86" y1="478" x2="932" y2="478" stroke="#222" stroke-width="1.5"/>
 <line x1="86" y1="56" x2="86" y2="478" stroke="#222" stroke-width="1.5"/>
-<path d="M 86.0 462.4 L 151.1 446.8 L 281.2 407.9 L 541.5 311.3 L 801.8 180.0 L 932.0 94.4" fill="none" stroke="#4C78A8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="86.0" cy="462.4" r="4.5" fill="#4C78A8"/>
-<circle cx="151.1" cy="446.8" r="4.5" fill="#4C78A8"/>
-<circle cx="281.2" cy="407.9" r="4.5" fill="#4C78A8"/>
-<circle cx="541.5" cy="311.3" r="4.5" fill="#4C78A8"/>
-<circle cx="801.8" cy="180.0" r="4.5" fill="#4C78A8"/>
+<path d="M 86.0 463.1 L 151.1 447.8 L 281.2 410.4 L 541.5 317.7 L 801.8 187.4 L 932.0 94.4" fill="none" stroke="#4C78A8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="86.0" cy="463.1" r="4.5" fill="#4C78A8"/>
+<circle cx="151.1" cy="447.8" r="4.5" fill="#4C78A8"/>
+<circle cx="281.2" cy="410.4" r="4.5" fill="#4C78A8"/>
+<circle cx="541.5" cy="317.7" r="4.5" fill="#4C78A8"/>
+<circle cx="801.8" cy="187.4" r="4.5" fill="#4C78A8"/>
 <circle cx="932.0" cy="94.4" r="4.5" fill="#4C78A8"/>
 <rect x="712" y="66" width="210" height="42" rx="8" fill="#ffffff" stroke="#dddddd"/>
 <line x1="724" y1="90" x2="748" y2="90" stroke="#4C78A8" stroke-width="3"/>

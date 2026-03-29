@@ -1,0 +1,1518 @@
+========== BASELINE SERVER + PIPELINE ==========
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:297] 
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:297]        █     █     █▄   ▄█
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:297]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.18.0
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:297]   █▄█▀ █     █     █     █  model   Qwen/Qwen3-8B
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:297]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:297] 
+(APIServer pid=1019703) INFO 03-29 14:02:34 [utils.py:233] non-default args: {'model_tag': 'Qwen/Qwen3-8B', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-8B', 'dtype': 'bfloat16', 'max_model_len': 32768, 'served_model_name': ['Qwen3-8B-Instruct'], 'generation_config': 'vllm', 'gpu_memory_utilization': 0.85, 'max_num_seqs': 6}
+(APIServer pid=1019703) INFO 03-29 14:02:36 [model.py:533] Resolved architecture: Qwen3ForCausalLM
+(APIServer pid=1019703) INFO 03-29 14:02:36 [model.py:1582] Using max model len 32768
+(APIServer pid=1019703) INFO 03-29 14:02:36 [scheduler.py:231] Chunked prefill is enabled with max_num_batched_tokens=2048.
+(APIServer pid=1019703) INFO 03-29 14:02:36 [vllm.py:754] Asynchronous scheduling is enabled.
+(EngineCore pid=1019989) INFO 03-29 14:02:42 [core.py:103] Initializing a V1 LLM engine (v0.18.0) with config: model='Qwen/Qwen3-8B', speculative_config=None, tokenizer='Qwen/Qwen3-8B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=Qwen3-8B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::kda_attention', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 8, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}
+(EngineCore pid=1019989) INFO 03-29 14:02:43 [parallel_state.py:1395] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://10.26.12.48:36655 backend=nccl
+(EngineCore pid=1019989) INFO 03-29 14:02:43 [parallel_state.py:1717] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=1019989) INFO 03-29 14:02:43 [gpu_model_runner.py:4481] Starting to load model Qwen/Qwen3-8B...
+(EngineCore pid=1019989) INFO 03-29 14:02:44 [cuda.py:317] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=1019989) INFO 03-29 14:02:44 [flash_attn.py:598] Using FlashAttention version 2
+(EngineCore pid=1019989) Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+(EngineCore pid=1019989) Loading safetensors checkpoint shards:  20% Completed | 1/5 [00:00<00:01,  2.34it/s]
+(EngineCore pid=1019989) Loading safetensors checkpoint shards:  40% Completed | 2/5 [00:00<00:01,  2.05it/s]
+(EngineCore pid=1019989) Loading safetensors checkpoint shards:  60% Completed | 3/5 [00:01<00:00,  2.07it/s]
+(EngineCore pid=1019989) Loading safetensors checkpoint shards:  80% Completed | 4/5 [00:01<00:00,  2.40it/s]
+(EngineCore pid=1019989) Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:01<00:00,  3.07it/s]
+(EngineCore pid=1019989) Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:01<00:00,  2.61it/s]
+(EngineCore pid=1019989) 
+(EngineCore pid=1019989) INFO 03-29 14:02:47 [default_loader.py:384] Loading weights took 1.94 seconds
+(EngineCore pid=1019989) INFO 03-29 14:02:48 [gpu_model_runner.py:4566] Model loading took 15.27 GiB memory and 3.989573 seconds
+(EngineCore pid=1019989) INFO 03-29 14:02:50 [backends.py:988] Using cache directory: /home/danyang/.cache/vllm/torch_compile_cache/025828d5c9/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=1019989) INFO 03-29 14:02:50 [backends.py:1048] Dynamo bytecode transform time: 2.33 s
+(EngineCore pid=1019989) INFO 03-29 14:02:52 [backends.py:284] Directly load the compiled graph(s) for compile range (1, 2048) from the cache, took 0.961 s
+(EngineCore pid=1019989) INFO 03-29 14:02:52 [monitor.py:48] torch.compile took 3.55 s in total
+(EngineCore pid=1019989) INFO 03-29 14:02:52 [decorators.py:296] Directly load AOT compilation from path /home/danyang/.cache/vllm/torch_compile_cache/torch_aot_compile/ab5f790a50a3684d47ce768a67b4ebb0bb42ec4f76d3bdd3719c3f0a78cd33ae/rank_0_0/model
+(EngineCore pid=1019989) INFO 03-29 14:02:52 [monitor.py:76] Initial profiling/warmup run took 0.13 s
+(EngineCore pid=1019989) INFO 03-29 14:02:52 [kv_cache_utils.py:826] Overriding num_gpu_blocks=0 with num_gpu_blocks_override=8
+(EngineCore pid=1019989) INFO 03-29 14:02:52 [gpu_model_runner.py:5607] Profiling CUDA graph memory: PIECEWISE=4 (largest=8), FULL=3 (largest=4)
+(EngineCore pid=1019989) INFO 03-29 14:02:53 [gpu_model_runner.py:5686] Estimated CUDA graph memory: 0.05 GiB total
+(EngineCore pid=1019989) INFO 03-29 14:02:53 [gpu_worker.py:456] Available KV cache memory: 51.77 GiB
+(EngineCore pid=1019989) INFO 03-29 14:02:53 [gpu_worker.py:490] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8500 to 0.8507 to maintain the same effective KV cache size.
+(EngineCore pid=1019989) INFO 03-29 14:02:53 [kv_cache_utils.py:1316] GPU KV cache size: 376,960 tokens
+(EngineCore pid=1019989) INFO 03-29 14:02:53 [kv_cache_utils.py:1321] Maximum concurrency for 32,768 tokens per request: 11.50x
+(EngineCore pid=1019989) Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 4/4 [00:00<00:00, 36.51it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 4/4 [00:00<00:00, 36.46it/s]
+(EngineCore pid=1019989) Capturing CUDA graphs (decode, FULL):   0%|          | 0/3 [00:00<?, ?it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 3/3 [00:00<00:00, 43.26it/s]
+(EngineCore pid=1019989) INFO 03-29 14:02:54 [gpu_model_runner.py:5746] Graph capturing finished in 1 secs, took 0.04 GiB
+(EngineCore pid=1019989) INFO 03-29 14:02:54 [gpu_worker.py:617] CUDA graph pool memory: 0.04 GiB (actual), 0.05 GiB (estimated), difference: 0.01 GiB (35.0%).
+(EngineCore pid=1019989) INFO 03-29 14:02:54 [core.py:281] init engine (profile, create kv cache, warmup model) took 6.32 seconds
+(EngineCore pid=1019989) INFO 03-29 14:02:56 [vllm.py:754] Asynchronous scheduling is enabled.
+(APIServer pid=1019703) INFO 03-29 14:02:56 [api_server.py:576] Supported tasks: ['generate']
+(APIServer pid=1019703) INFO 03-29 14:02:59 [hf.py:320] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=1019703) INFO 03-29 14:02:59 [api_server.py:580] Starting vLLM server on http://127.0.0.1:8000
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:37] Available routes are:
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /docs, Methods: GET, HEAD
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /tokenize, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /detokenize, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /load, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /version, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /health, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /metrics, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/models, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /ping, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /ping, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /invocations, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/responses, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/completions, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/messages, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=1019703) INFO 03-29 14:02:59 [launcher.py:46] Route: /v1/completions/render, Methods: POST
+(APIServer pid=1019703) INFO:     Started server process [1019703]
+(APIServer pid=1019703) INFO:     Waiting for application startup.
+(APIServer pid=1019703) INFO:     Application startup complete.
+(APIServer pid=1019703) INFO:     127.0.0.1:33344 - "GET /health HTTP/1.1" 200 OK
+health ok
+=== pipeline RUN_ROOT=/home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct ===
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/prefill_prompts.jsonl
+72 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/prefill_prompts.jsonl
+(APIServer pid=1019703) INFO:     127.0.0.1:48618 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48622 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48632 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48638 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48654 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48666 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48680 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48690 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48694 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48708 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48718 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48726 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48730 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48746 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48756 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48770 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48778 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48784 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48794 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48808 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48810 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48824 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48840 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48850 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:05:20 [loggers.py:259] Engine 000: Avg prompt throughput: 6969.5 tokens/s, Avg generation throughput: 2.4 tokens/s, Running: 1 reqs, Waiting: 4 reqs, GPU KV cache usage: 1.7%, Prefix cache hit rate: 5.1%
+(APIServer pid=1019703) INFO:     127.0.0.1:48852 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48866 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47456 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47462 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47476 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47480 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47490 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47496 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47512 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47528 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47530 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47546 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47550 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:05:30 [loggers.py:259] Engine 000: Avg prompt throughput: 11243.4 tokens/s, Avg generation throughput: 1.3 tokens/s, Running: 1 reqs, Waiting: 4 reqs, GPU KV cache usage: 1.2%, Prefix cache hit rate: 3.2%
+(APIServer pid=1019703) INFO:     127.0.0.1:47560 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47574 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47588 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47592 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:47608 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:05:40 [loggers.py:259] Engine 000: Avg prompt throughput: 8104.0 tokens/s, Avg generation throughput: 0.5 tokens/s, Running: 2 reqs, Waiting: 4 reqs, GPU KV cache usage: 4.7%, Prefix cache hit rate: 2.5%
+(APIServer pid=1019703) INFO:     127.0.0.1:50484 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:50496 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:50500 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:50502 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:50506 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:50512 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:05:50 [loggers.py:259] Engine 000: Avg prompt throughput: 9724.3 tokens/s, Avg generation throughput: 0.6 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 4.4%, Prefix cache hit rate: 2.1%
+(APIServer pid=1019703) INFO:     127.0.0.1:45214 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45218 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45226 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:06:00 [loggers.py:259] Engine 000: Avg prompt throughput: 7320.7 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 1.9%
+(APIServer pid=1019703) INFO:     127.0.0.1:45242 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45252 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58956 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58964 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:06:10 [loggers.py:259] Engine 000: Avg prompt throughput: 9759.9 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 2.6%, Prefix cache hit rate: 1.7%
+(APIServer pid=1019703) INFO:     127.0.0.1:58974 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58978 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:38148 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:06:20 [loggers.py:259] Engine 000: Avg prompt throughput: 7319.7 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 4.9%, Prefix cache hit rate: 1.6%
+(APIServer pid=1019703) INFO:     127.0.0.1:38150 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:38156 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36004 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:06:30 [loggers.py:259] Engine 000: Avg prompt throughput: 7731.4 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 5.0%, Prefix cache hit rate: 1.5%
+(APIServer pid=1019703) INFO:     127.0.0.1:36008 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36016 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36030 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:06:40 [loggers.py:259] Engine 000: Avg prompt throughput: 8548.6 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 3.0%, Prefix cache hit rate: 1.4%
+(APIServer pid=1019703) INFO:     127.0.0.1:59076 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59082 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:06:50 [loggers.py:259] Engine 000: Avg prompt throughput: 5699.2 tokens/s, Avg generation throughput: 0.2 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 7.4%, Prefix cache hit rate: 1.3%
+(APIServer pid=1019703) INFO:     127.0.0.1:59088 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:35420 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:35436 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:07:00 [loggers.py:259] Engine 000: Avg prompt throughput: 8548.7 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 2 reqs, GPU KV cache usage: 5.4%, Prefix cache hit rate: 1.3%
+(APIServer pid=1019703) INFO:     127.0.0.1:42720 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42726 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42738 - "POST /v1/completions HTTP/1.1" 200 OK
+[prefill] sample_id=tok2048_s000 status=200 elapsed_ms=340
+[prefill] sample_id=tok2048_s001 status=200 elapsed_ms=495
+[prefill] sample_id=tok2048_s002 status=200 elapsed_ms=651
+[prefill] sample_id=tok2048_s003 status=200 elapsed_ms=806
+[prefill] sample_id=tok2048_s004 status=200 elapsed_ms=961
+[prefill] sample_id=tok2048_s005 status=200 elapsed_ms=1115
+[prefill] sample_id=tok2048_s006 status=200 elapsed_ms=939
+[prefill] sample_id=tok2048_s007 status=200 elapsed_ms=938
+[prefill] sample_id=tok2048_s008 status=200 elapsed_ms=938
+[prefill] sample_id=tok2048_s009 status=200 elapsed_ms=939
+[prefill] sample_id=tok2048_s010 status=200 elapsed_ms=941
+[prefill] sample_id=tok2048_s011 status=200 elapsed_ms=942
+[prefill] sample_id=tok4096_s000 status=200 elapsed_ms=959
+[prefill] sample_id=tok4096_s001 status=200 elapsed_ms=1133
+[prefill] sample_id=tok4096_s002 status=200 elapsed_ms=1305
+[prefill] sample_id=tok4096_s003 status=200 elapsed_ms=1478
+[prefill] sample_id=tok4096_s004 status=200 elapsed_ms=1649
+[prefill] sample_id=tok4096_s005 status=200 elapsed_ms=1822
+[prefill] sample_id=tok4096_s006 status=200 elapsed_ms=1979
+[prefill] sample_id=tok4096_s007 status=200 elapsed_ms=1979
+[prefill] sample_id=tok4096_s008 status=200 elapsed_ms=1981
+[prefill] sample_id=tok4096_s009 status=200 elapsed_ms=1982
+[prefill] sample_id=tok4096_s010 status=200 elapsed_ms=1985
+[prefill] sample_id=tok4096_s011 status=200 elapsed_ms=1986
+[prefill] sample_id=tok8192_s000 status=200 elapsed_ms=2223
+[prefill] sample_id=tok8192_s001 status=200 elapsed_ms=2616
+[prefill] sample_id=tok8192_s002 status=200 elapsed_ms=3007
+[prefill] sample_id=tok8192_s003 status=200 elapsed_ms=3401
+[prefill] sample_id=tok8192_s004 status=200 elapsed_ms=3791
+[prefill] sample_id=tok8192_s005 status=200 elapsed_ms=4185
+[prefill] sample_id=tok8192_s006 status=200 elapsed_ms=4344
+[prefill] sample_id=tok8192_s007 status=200 elapsed_ms=4347
+[prefill] sample_id=tok8192_s008 status=200 elapsed_ms=4353
+[prefill] sample_id=tok8192_s009 status=200 elapsed_ms=4356
+[prefill] sample_id=tok8192_s010 status=200 elapsed_ms=4363
+[prefill] sample_id=tok8192_s011 status=200 elapsed_ms=4371
+[prefill] sample_id=tok16384_s000 status=200 elapsed_ms=5194
+[prefill] sample_id=tok16384_s001 status=200 elapsed_ms=6174
+[prefill] sample_id=tok16384_s002 status=200 elapsed_ms=7155
+[prefill] sample_id=tok16384_s003 status=200 elapsed_ms=8137
+[prefill] sample_id=tok16384_s004 status=200 elapsed_ms=9123
+[prefill] sample_id=tok16384_s005 status=200 elapsed_ms=10103
+[prefill] sample_id=tok16384_s006 status=200 elapsed_ms=10277
+[prefill] sample_id=tok16384_s007 status=200 elapsed_ms=10288
+[prefill] sample_id=tok16384_s008 status=200 elapsed_ms=10305
+[prefill] sample_id=tok16384_s009 status=200 elapsed_ms=10315
+[prefill] sample_id=tok16384_s010 status=200 elapsed_ms=10330
+[prefill] sample_id=tok16384_s011 status=200 elapsed_ms=10178
+[prefill] sample_id=tok24576_s000 status=200 elapsed_ms=11420
+[prefill] sample_id=tok24576_s001 status=200 elapsed_ms=12667
+[prefill] sample_id=tok24576_s002 status=200 elapsed_ms=13920
+[prefill] sample_id=tok24576_s003 status=200 elapsed_ms=15178
+[prefill] sample_id=tok24576_s004 status=200 elapsed_ms=16426
+[prefill] sample_id=tok24576_s005 status=200 elapsed_ms=17859
+[prefill] sample_id=tok24576_s006 status=200 elapsed_ms=17880
+[prefill] sample_id=tok24576_s007 status=200 elapsed_ms=17916
+[prefill] sample_id=tok24576_s008 status=200 elapsed_ms=17942
+[prefill] sample_id=tok24576_s009 status=200 elapsed_ms=17970
+[prefill] sample_id=tok24576_s010 status=200 elapsed_ms=18009
+[prefill] sample_id=tok24576_s011 status=200 elapsed_ms=17856
+[prefill] sample_id=tok28672_s000 status=200 elapsed_ms=18595
+[prefill] sample_id=tok28672_s001 status=200 elapsed_ms=19324
+[prefill] sample_id=tok28672_s002 status=200 elapsed_ms=20058
+[prefill] sample_id=tok28672_s003 status=200 elapsed_ms=20786
+[prefill] sample_id=tok28672_s004 status=200 elapsed_ms=21518
+[prefill] sample_id=tok28672_s005 status=200 elapsed_ms=22428
+[prefill] sample_id=tok28672_s006 status=200 elapsed_ms=22454
+[prefill] sample_id=tok28672_s007 status=200 elapsed_ms=22477
+[prefill] sample_id=tok28672_s008 status=200 elapsed_ms=22489
+[prefill] sample_id=tok28672_s009 status=200 elapsed_ms=22501
+[prefill] sample_id=tok28672_s010 status=200 elapsed_ms=22514
+[prefill] sample_id=tok28672_s011 status=200 elapsed_ms=22322
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/prefill_samples.csv
+73 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/prefill_samples.csv
+(APIServer pid=1019703) INFO 03-29 14:07:10 [loggers.py:259] Engine 000: Avg prompt throughput: 8548.3 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 1.2%
+(APIServer pid=1019703) INFO 03-29 14:07:20 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 1.2%
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/decode_prompts.jsonl
+72 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/decode_prompts.jsonl
+(APIServer pid=1019703) INFO:     127.0.0.1:49450 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49480 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49458 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49474 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49514 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49522 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49552 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49494 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49504 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49560 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49584 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49606 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:09:30 [loggers.py:259] Engine 000: Avg prompt throughput: 1143.9 tokens/s, Avg generation throughput: 407.5 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.4%, Prefix cache hit rate: 3.6%
+(APIServer pid=1019703) INFO:     127.0.0.1:49536 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49596 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49608 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34020 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49576 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49586 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34028 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34044 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34084 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34052 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34016 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34096 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34042 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34122 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34128 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34148 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:09:40 [loggers.py:259] Engine 000: Avg prompt throughput: 952.0 tokens/s, Avg generation throughput: 440.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.8%, Prefix cache hit rate: 5.5%
+(APIServer pid=1019703) INFO:     127.0.0.1:34068 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34164 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42284 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34112 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42318 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42300 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:34134 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42334 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42330 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42274 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42348 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42304 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42362 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:09:50 [loggers.py:259] Engine 000: Avg prompt throughput: 1771.2 tokens/s, Avg generation throughput: 397.6 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.4%, Prefix cache hit rate: 8.2%
+(APIServer pid=1019703) INFO:     127.0.0.1:42364 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36976 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42332 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36988 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37006 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42356 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37010 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37032 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36964 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37054 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37042 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37004 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:10:00 [loggers.py:259] Engine 000: Avg prompt throughput: 1580.8 tokens/s, Avg generation throughput: 386.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.5%, Prefix cache hit rate: 10.7%
+(APIServer pid=1019703) INFO:     127.0.0.1:37066 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49190 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37016 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49192 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49216 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37050 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49226 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49252 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:37082 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49256 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49268 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49200 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49290 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49276 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:10:10 [loggers.py:259] Engine 000: Avg prompt throughput: 1582.3 tokens/s, Avg generation throughput: 372.2 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.5%, Prefix cache hit rate: 13.2%
+(APIServer pid=1019703) INFO:     127.0.0.1:49240 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45216 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45194 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49264 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45218 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45236 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:49282 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45248 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45262 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:10:20 [loggers.py:259] Engine 000: Avg prompt throughput: 2416.0 tokens/s, Avg generation throughput: 302.8 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 8.7%, Prefix cache hit rate: 16.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:45266 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58686 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45222 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58698 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58716 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:45252 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58724 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58734 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:10:30 [loggers.py:259] Engine 000: Avg prompt throughput: 3215.7 tokens/s, Avg generation throughput: 291.4 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 11.1%, Prefix cache hit rate: 19.0%
+(APIServer pid=1019703) INFO:     127.0.0.1:58682 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58768 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58746 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58712 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59578 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59594 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58730 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59606 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59612 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58762 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:10:40 [loggers.py:259] Engine 000: Avg prompt throughput: 2415.8 tokens/s, Avg generation throughput: 300.0 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 8.9%, Prefix cache hit rate: 21.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:59614 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59632 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59582 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59640 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36404 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59608 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36430 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36412 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59626 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:10:50 [loggers.py:259] Engine 000: Avg prompt throughput: 3235.2 tokens/s, Avg generation throughput: 249.5 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 11.0%, Prefix cache hit rate: 24.3%
+(APIServer pid=1019703) INFO:     127.0.0.1:36446 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36432 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36394 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:52516 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:52524 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36416 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:11:00 [loggers.py:259] Engine 000: Avg prompt throughput: 3247.9 tokens/s, Avg generation throughput: 206.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 15.4%, Prefix cache hit rate: 26.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:52540 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:52560 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:36438 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:52566 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54724 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:52520 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54736 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54742 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:11:10 [loggers.py:259] Engine 000: Avg prompt throughput: 3249.4 tokens/s, Avg generation throughput: 191.5 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 18.1%, Prefix cache hit rate: 29.5%
+(APIServer pid=1019703) INFO:     127.0.0.1:52554 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54754 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54188 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54718 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54216 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:11:20 [loggers.py:259] Engine 000: Avg prompt throughput: 3247.9 tokens/s, Avg generation throughput: 190.5 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 17.6%, Prefix cache hit rate: 31.7%
+(APIServer pid=1019703) INFO:     127.0.0.1:54198 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54740 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54230 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48470 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:54184 - "POST /v1/completions HTTP/1.1" 200 OK
+[decode] sample_id=tok2048_s000_g128 status=200 elapsed_ms=2095
+[decode] sample_id=tok2048_s001_g128 status=200 elapsed_ms=2092
+[decode] sample_id=tok2048_s001_g256 status=200 elapsed_ms=3775
+[decode] sample_id=tok2048_s000_g256 status=200 elapsed_ms=3791
+[decode] sample_id=tok2048_s002_g128 status=200 elapsed_ms=1746
+[decode] sample_id=tok2048_s003_g128 status=200 elapsed_ms=1765
+[decode] sample_id=tok2048_s002_g256 status=200 elapsed_ms=3462
+[decode] sample_id=tok2048_s000_g512 status=200 elapsed_ms=7259
+[decode] sample_id=tok2048_s001_g512 status=200 elapsed_ms=7257
+[decode] sample_id=tok2048_s003_g256 status=200 elapsed_ms=3489
+[decode] sample_id=tok2048_s004_g128 status=200 elapsed_ms=1782
+[decode] sample_id=tok2048_s005_g128 status=200 elapsed_ms=1752
+[decode] sample_id=tok2048_s002_g512 status=200 elapsed_ms=6817
+[decode] sample_id=tok2048_s004_g256 status=200 elapsed_ms=3359
+[decode] sample_id=tok2048_s005_g256 status=200 elapsed_ms=3487
+[decode] sample_id=tok2048_s006_g128 status=200 elapsed_ms=1769
+[decode] sample_id=tok2048_s003_g512 status=200 elapsed_ms=6820
+[decode] sample_id=tok2048_s004_g512 status=200 elapsed_ms=6806
+[decode] sample_id=tok2048_s006_g256 status=200 elapsed_ms=3485
+[decode] sample_id=tok2048_s007_g128 status=200 elapsed_ms=1767
+[decode] sample_id=tok2048_s008_g128 status=200 elapsed_ms=1753
+[decode] sample_id=tok2048_s007_g256 status=200 elapsed_ms=3494
+[decode] sample_id=tok2048_s005_g512 status=200 elapsed_ms=6822
+[decode] sample_id=tok2048_s008_g256 status=200 elapsed_ms=3481
+[decode] sample_id=tok2048_s009_g128 status=200 elapsed_ms=1768
+[decode] sample_id=tok2048_s006_g512 status=200 elapsed_ms=6813
+[decode] sample_id=tok2048_s009_g256 status=200 elapsed_ms=3487
+[decode] sample_id=tok2048_s010_g128 status=200 elapsed_ms=1765
+[decode] sample_id=tok2048_s007_g512 status=200 elapsed_ms=6970
+[decode] sample_id=tok2048_s010_g256 status=200 elapsed_ms=3513
+[decode] sample_id=tok2048_s011_g128 status=200 elapsed_ms=1785
+[decode] sample_id=tok2048_s008_g512 status=200 elapsed_ms=7202
+[decode] sample_id=tok4096_s000_g128 status=200 elapsed_ms=2017
+[decode] sample_id=tok2048_s011_g256 status=200 elapsed_ms=3672
+[decode] sample_id=tok2048_s009_g512 status=200 elapsed_ms=7295
+[decode] sample_id=tok4096_s001_g128 status=200 elapsed_ms=2047
+[decode] sample_id=tok4096_s000_g256 status=200 elapsed_ms=3709
+[decode] sample_id=tok2048_s010_g512 status=200 elapsed_ms=7430
+[decode] sample_id=tok4096_s001_g256 status=200 elapsed_ms=3886
+[decode] sample_id=tok2048_s011_g512 status=200 elapsed_ms=7681
+[decode] sample_id=tok4096_s002_g128 status=200 elapsed_ms=2065
+[decode] sample_id=tok4096_s002_g256 status=200 elapsed_ms=4044
+[decode] sample_id=tok4096_s003_g128 status=200 elapsed_ms=2091
+[decode] sample_id=tok4096_s000_g512 status=200 elapsed_ms=7743
+[decode] sample_id=tok4096_s003_g256 status=200 elapsed_ms=4112
+[decode] sample_id=tok4096_s004_g128 status=200 elapsed_ms=2081
+[decode] sample_id=tok4096_s001_g512 status=200 elapsed_ms=8147
+[decode] sample_id=tok4096_s004_g256 status=200 elapsed_ms=4120
+[decode] sample_id=tok4096_s005_g128 status=200 elapsed_ms=2102
+[decode] sample_id=tok4096_s002_g512 status=200 elapsed_ms=8189
+[decode] sample_id=tok4096_s006_g128 status=200 elapsed_ms=2106
+[decode] sample_id=tok4096_s005_g256 status=200 elapsed_ms=3806
+[decode] sample_id=tok4096_s003_g512 status=200 elapsed_ms=7885
+[decode] sample_id=tok4096_s006_g256 status=200 elapsed_ms=3778
+[decode] sample_id=tok4096_s007_g128 status=200 elapsed_ms=2077
+[decode] sample_id=tok4096_s004_g512 status=200 elapsed_ms=7887
+[decode] sample_id=tok4096_s007_g256 status=200 elapsed_ms=4082
+[decode] sample_id=tok4096_s008_g128 status=200 elapsed_ms=2083
+[decode] sample_id=tok4096_s005_g512 status=200 elapsed_ms=8012
+[decode] sample_id=tok4096_s008_g256 status=200 elapsed_ms=4082
+[decode] sample_id=tok4096_s009_g128 status=200 elapsed_ms=2084
+[decode] sample_id=tok4096_s006_g512 status=200 elapsed_ms=8155
+[decode] sample_id=tok4096_s009_g256 status=200 elapsed_ms=3932
+[decode] sample_id=tok4096_s010_g128 status=200 elapsed_ms=2085
+[decode] sample_id=tok4096_s007_g512 status=200 elapsed_ms=8185
+[decode] sample_id=tok4096_s011_g128 status=200 elapsed_ms=2111
+[decode] sample_id=tok4096_s010_g256 status=200 elapsed_ms=3808
+[decode] sample_id=tok4096_s008_g512 status=200 elapsed_ms=8694
+[decode] sample_id=tok8192_s000_g128 status=200 elapsed_ms=2664
+[decode] sample_id=tok4096_s011_g256 status=200 elapsed_ms=4475
+[decode] sample_id=tok4096_s009_g512 status=200 elapsed_ms=8563
+[decode] sample_id=tok8192_s000_g256 status=200 elapsed_ms=4588
+[decode] sample_id=tok8192_s001_g128 status=200 elapsed_ms=2738
+[decode] sample_id=tok4096_s010_g512 status=200 elapsed_ms=9191
+[decode] sample_id=tok8192_s001_g256 status=200 elapsed_ms=5343
+[decode] sample_id=tok8192_s002_g128 status=200 elapsed_ms=2759
+[decode] sample_id=tok4096_s011_g512 status=200 elapsed_ms=9798
+[decode] sample_id=tok8192_s002_g256 status=200 elapsed_ms=5384
+[decode] sample_id=tok8192_s003_g128 status=200 elapsed_ms=2782
+[decode] sample_id=tok8192_s000_g512 status=200 elapsed_ms=10276
+[decode] sample_id=tok8192_s003_g256 status=200 elapsed_ms=5443
+[decode] sample_id=tok8192_s004_g128 status=200 elapsed_ms=2789
+[decode] sample_id=tok8192_s001_g512 status=200 elapsed_ms=10824
+[decode] sample_id=tok8192_s004_g256 status=200 elapsed_ms=5121
+[decode] sample_id=tok8192_s005_g128 status=200 elapsed_ms=2846
+[decode] sample_id=tok8192_s002_g512 status=200 elapsed_ms=10889
+[decode] sample_id=tok8192_s006_g128 status=200 elapsed_ms=2824
+[decode] sample_id=tok8192_s005_g256 status=200 elapsed_ms=4759
+[decode] sample_id=tok8192_s003_g512 status=200 elapsed_ms=10346
+[decode] sample_id=tok8192_s006_g256 status=200 elapsed_ms=4711
+[decode] sample_id=tok8192_s007_g128 status=200 elapsed_ms=2782
+[decode] sample_id=tok8192_s004_g512 status=200 elapsed_ms=10516
+[decode] sample_id=tok8192_s007_g256 status=200 elapsed_ms=5262
+[decode] sample_id=tok8192_s008_g128 status=200 elapsed_ms=2817
+[decode] sample_id=tok8192_s005_g512 status=200 elapsed_ms=10489
+[decode] sample_id=tok8192_s008_g256 status=200 elapsed_ms=5107
+[decode] sample_id=tok8192_s009_g128 status=200 elapsed_ms=2818
+[decode] sample_id=tok8192_s006_g512 status=200 elapsed_ms=10872
+[decode] sample_id=tok8192_s009_g256 status=200 elapsed_ms=5105
+[decode] sample_id=tok8192_s010_g128 status=200 elapsed_ms=2816
+[decode] sample_id=tok8192_s007_g512 status=200 elapsed_ms=10930
+[decode] sample_id=tok8192_s011_g128 status=200 elapsed_ms=2841
+[decode] sample_id=tok8192_s010_g256 status=200 elapsed_ms=4768
+[decode] sample_id=tok8192_s008_g512 status=200 elapsed_ms=12129
+[decode] sample_id=tok16384_s000_g128 status=200 elapsed_ms=4161
+[decode] sample_id=tok8192_s011_g256 status=200 elapsed_ms=6219
+[decode] sample_id=tok8192_s009_g512 status=200 elapsed_ms=12231
+[decode] sample_id=tok16384_s000_g256 status=200 elapsed_ms=6487
+[decode] sample_id=tok16384_s001_g128 status=200 elapsed_ms=4387
+[decode] sample_id=tok8192_s010_g512 status=200 elapsed_ms=13178
+[decode] sample_id=tok16384_s001_g256 status=200 elapsed_ms=7914
+[decode] sample_id=tok16384_s002_g128 status=200 elapsed_ms=4445
+[decode] sample_id=tok8192_s011_g512 status=200 elapsed_ms=14702
+[decode] sample_id=tok16384_s002_g256 status=200 elapsed_ms=8636
+[decode] sample_id=tok16384_s003_g128 status=200 elapsed_ms=4488
+[decode] sample_id=tok16384_s000_g512 status=200 elapsed_ms=15193
+[decode] sample_id=tok16384_s003_g256 status=200 elapsed_ms=8685
+[decode] sample_id=tok16384_s004_g128 status=200 elapsed_ms=4496
+[decode] sample_id=tok16384_s001_g512 status=200 elapsed_ms=17177
+[decode] sample_id=tok16384_s004_g256 status=200 elapsed_ms=8605
+[decode] sample_id=tok16384_s005_g128 status=200 elapsed_ms=4621
+[decode] sample_id=tok16384_s002_g512 status=200 elapsed_ms=17350
+[decode] sample_id=tok16384_s006_g128 status=200 elapsed_ms=4565
+[decode] sample_id=tok16384_s005_g256 status=200 elapsed_ms=6955
+[decode] sample_id=tok16384_s003_g512 status=200 elapsed_ms=17411
+[decode] sample_id=tok16384_s006_g256 status=200 elapsed_ms=6870
+[decode] sample_id=tok16384_s007_g128 status=200 elapsed_ms=4520
+(APIServer pid=1019703) INFO:     127.0.0.1:48476 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48498 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:11:30 [loggers.py:259] Engine 000: Avg prompt throughput: 3247.6 tokens/s, Avg generation throughput: 178.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.2%, Prefix cache hit rate: 33.2%
+(APIServer pid=1019703) INFO:     127.0.0.1:54204 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48510 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44892 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:48462 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44906 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44934 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:11:40 [loggers.py:259] Engine 000: Avg prompt throughput: 3248.0 tokens/s, Avg generation throughput: 164.6 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 20.8%, Prefix cache hit rate: 34.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:48490 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39402 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44946 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44880 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39446 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:11:50 [loggers.py:259] Engine 000: Avg prompt throughput: 4068.7 tokens/s, Avg generation throughput: 176.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.8%, Prefix cache hit rate: 36.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:39418 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44920 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39458 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:33336 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:12:00 [loggers.py:259] Engine 000: Avg prompt throughput: 2443.0 tokens/s, Avg generation throughput: 117.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 27.4%, Prefix cache hit rate: 37.4%
+(APIServer pid=1019703) INFO:     127.0.0.1:39386 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:33338 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:33360 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39434 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:12:10 [loggers.py:259] Engine 000: Avg prompt throughput: 4884.6 tokens/s, Avg generation throughput: 142.0 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 26.3%, Prefix cache hit rate: 39.0%
+(APIServer pid=1019703) INFO:     127.0.0.1:44602 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44622 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:33330 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44630 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46878 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:12:20 [loggers.py:259] Engine 000: Avg prompt throughput: 2444.5 tokens/s, Avg generation throughput: 107.7 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 31.1%, Prefix cache hit rate: 40.0%
+(APIServer pid=1019703) INFO:     127.0.0.1:33354 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46904 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46888 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:44618 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:12:30 [loggers.py:259] Engine 000: Avg prompt throughput: 4884.4 tokens/s, Avg generation throughput: 139.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 26.2%, Prefix cache hit rate: 41.3%
+(APIServer pid=1019703) INFO:     127.0.0.1:57208 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:57194 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46864 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46702 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46728 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:12:40 [loggers.py:259] Engine 000: Avg prompt throughput: 2444.7 tokens/s, Avg generation throughput: 145.4 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 28.4%, Prefix cache hit rate: 42.2%
+(APIServer pid=1019703) INFO:     127.0.0.1:46892 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46734 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:60480 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:57204 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:12:50 [loggers.py:259] Engine 000: Avg prompt throughput: 4884.6 tokens/s, Avg generation throughput: 99.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 26.2%, Prefix cache hit rate: 43.3%
+(APIServer pid=1019703) INFO:     127.0.0.1:60490 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:60516 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46714 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39412 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39434 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:13:00 [loggers.py:259] Engine 000: Avg prompt throughput: 2444.5 tokens/s, Avg generation throughput: 150.8 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 27.9%, Prefix cache hit rate: 44.0%
+(APIServer pid=1019703) INFO:     127.0.0.1:60468 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39450 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:56426 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:13:10 [loggers.py:259] Engine 000: Avg prompt throughput: 2443.0 tokens/s, Avg generation throughput: 89.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 33.3%, Prefix cache hit rate: 44.5%
+(APIServer pid=1019703) INFO:     127.0.0.1:60504 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:56462 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:56440 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39424 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:13:20 [loggers.py:259] Engine 000: Avg prompt throughput: 5705.6 tokens/s, Avg generation throughput: 125.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 28.4%, Prefix cache hit rate: 45.7%
+(APIServer pid=1019703) INFO:     127.0.0.1:38436 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:38454 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:56420 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:13:30 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.9 tokens/s, Avg generation throughput: 135.5 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 29.6%, Prefix cache hit rate: 46.2%
+(APIServer pid=1019703) INFO:     127.0.0.1:38470 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46782 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:56456 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:46796 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58022 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:13:40 [loggers.py:259] Engine 000: Avg prompt throughput: 2854.4 tokens/s, Avg generation throughput: 106.6 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 33.3%, Prefix cache hit rate: 46.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:38448 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:58024 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39904 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:13:50 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.6 tokens/s, Avg generation throughput: 88.0 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 36.6%, Prefix cache hit rate: 47.3%
+(APIServer pid=1019703) INFO:     127.0.0.1:46776 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39920 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39932 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:14:00 [loggers.py:259] Engine 000: Avg prompt throughput: 5701.8 tokens/s, Avg generation throughput: 99.8 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 38.2%, Prefix cache hit rate: 47.8%
+(APIServer pid=1019703) INFO:     127.0.0.1:58014 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:53066 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:53046 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39892 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:14:10 [loggers.py:259] Engine 000: Avg prompt throughput: 2854.2 tokens/s, Avg generation throughput: 130.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 30.6%, Prefix cache hit rate: 48.6%
+(APIServer pid=1019703) INFO:     127.0.0.1:55070 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:55090 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:39922 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43110 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43090 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:14:20 [loggers.py:259] Engine 000: Avg prompt throughput: 2854.5 tokens/s, Avg generation throughput: 128.2 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 31.1%, Prefix cache hit rate: 49.1%
+(APIServer pid=1019703) INFO:     127.0.0.1:53056 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43272 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43126 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:14:30 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.8 tokens/s, Avg generation throughput: 89.2 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 34.9%, Prefix cache hit rate: 49.5%
+(APIServer pid=1019703) INFO:     127.0.0.1:55074 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43288 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43294 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:14:40 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.8 tokens/s, Avg generation throughput: 87.8 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 37.6%, Prefix cache hit rate: 49.9%
+(APIServer pid=1019703) INFO:     127.0.0.1:43098 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59302 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:59276 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43262 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42596 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:43292 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO 03-29 14:14:50 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.6 tokens/s, Avg generation throughput: 185.8 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 15.4%, Prefix cache hit rate: 50.6%
+(APIServer pid=1019703) INFO:     127.0.0.1:59292 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1019703) INFO:     127.0.0.1:42598 - "POST /v1/completions HTTP/1.1" 200 OK
+[decode] sample_id=tok16384_s004_g512 status=200 elapsed_ms=17477
+[decode] sample_id=tok16384_s007_g256 status=200 elapsed_ms=6907
+[decode] sample_id=tok16384_s008_g128 status=200 elapsed_ms=4558
+[decode] sample_id=tok16384_s005_g512 status=200 elapsed_ms=17440
+[decode] sample_id=tok16384_s009_g128 status=200 elapsed_ms=4553
+[decode] sample_id=tok16384_s008_g256 status=200 elapsed_ms=6940
+[decode] sample_id=tok16384_s006_g512 status=200 elapsed_ms=17419
+[decode] sample_id=tok16384_s009_g256 status=200 elapsed_ms=6888
+[decode] sample_id=tok16384_s010_g128 status=200 elapsed_ms=4554
+[decode] sample_id=tok16384_s007_g512 status=200 elapsed_ms=17470
+[decode] sample_id=tok16384_s011_g128 status=200 elapsed_ms=4571
+[decode] sample_id=tok16384_s010_g256 status=200 elapsed_ms=6957
+[decode] sample_id=tok16384_s008_g512 status=200 elapsed_ms=18924
+[decode] sample_id=tok24576_s000_g128 status=200 elapsed_ms=6244
+[decode] sample_id=tok16384_s011_g256 status=200 elapsed_ms=8714
+[decode] sample_id=tok16384_s009_g512 status=200 elapsed_ms=20708
+[decode] sample_id=tok24576_s000_g256 status=200 elapsed_ms=9090
+[decode] sample_id=tok24576_s001_g128 status=200 elapsed_ms=6459
+[decode] sample_id=tok16384_s010_g512 status=200 elapsed_ms=22554
+[decode] sample_id=tok24576_s001_g256 status=200 elapsed_ms=9263
+[decode] sample_id=tok24576_s002_g128 status=200 elapsed_ms=6567
+[decode] sample_id=tok16384_s011_g512 status=200 elapsed_ms=24158
+[decode] sample_id=tok24576_s002_g256 status=200 elapsed_ms=9452
+[decode] sample_id=tok24576_s003_g128 status=200 elapsed_ms=6712
+[decode] sample_id=tok24576_s000_g512 status=200 elapsed_ms=25063
+[decode] sample_id=tok24576_s003_g256 status=200 elapsed_ms=9801
+[decode] sample_id=tok24576_s004_g128 status=200 elapsed_ms=6683
+[decode] sample_id=tok24576_s001_g512 status=200 elapsed_ms=25377
+[decode] sample_id=tok24576_s005_g128 status=200 elapsed_ms=6696
+[decode] sample_id=tok24576_s004_g256 status=200 elapsed_ms=9473
+[decode] sample_id=tok24576_s002_g512 status=200 elapsed_ms=25521
+[decode] sample_id=tok24576_s006_g128 status=200 elapsed_ms=6721
+[decode] sample_id=tok24576_s005_g256 status=200 elapsed_ms=9529
+[decode] sample_id=tok24576_s003_g512 status=200 elapsed_ms=25511
+[decode] sample_id=tok24576_s006_g256 status=200 elapsed_ms=9531
+[decode] sample_id=tok24576_s007_g128 status=200 elapsed_ms=6736
+[decode] sample_id=tok24576_s004_g512 status=200 elapsed_ms=24567
+[decode] sample_id=tok24576_s007_g256 status=200 elapsed_ms=9556
+[decode] sample_id=tok24576_s008_g128 status=200 elapsed_ms=6753
+[decode] sample_id=tok24576_s005_g512 status=200 elapsed_ms=25611
+[decode] sample_id=tok24576_s008_g256 status=200 elapsed_ms=10484
+[decode] sample_id=tok24576_s009_g128 status=200 elapsed_ms=6710
+[decode] sample_id=tok24576_s006_g512 status=200 elapsed_ms=25571
+[decode] sample_id=tok24576_s009_g256 status=200 elapsed_ms=9445
+[decode] sample_id=tok24576_s010_g128 status=200 elapsed_ms=6678
+[decode] sample_id=tok24576_s007_g512 status=200 elapsed_ms=25550
+[decode] sample_id=tok24576_s011_g128 status=200 elapsed_ms=6782
+[decode] sample_id=tok24576_s010_g256 status=200 elapsed_ms=9522
+[decode] sample_id=tok24576_s008_g512 status=200 elapsed_ms=26363
+[decode] sample_id=tok28672_s000_g128 status=200 elapsed_ms=7755
+[decode] sample_id=tok24576_s011_g256 status=200 elapsed_ms=10571
+[decode] sample_id=tok24576_s009_g512 status=200 elapsed_ms=25289
+[decode] sample_id=tok28672_s000_g256 status=200 elapsed_ms=10692
+[decode] sample_id=tok28672_s001_g128 status=200 elapsed_ms=7750
+[decode] sample_id=tok24576_s010_g512 status=200 elapsed_ms=28506
+[decode] sample_id=tok28672_s001_g256 status=200 elapsed_ms=12884
+[decode] sample_id=tok28672_s002_g128 status=200 elapsed_ms=7875
+[decode] sample_id=tok24576_s011_g512 status=200 elapsed_ms=29631
+[decode] sample_id=tok28672_s002_g256 status=200 elapsed_ms=10886
+[decode] sample_id=tok28672_s003_g128 status=200 elapsed_ms=7962
+[decode] sample_id=tok28672_s000_g512 status=200 elapsed_ms=29840
+[decode] sample_id=tok28672_s003_g256 status=200 elapsed_ms=11007
+[decode] sample_id=tok28672_s004_g128 status=200 elapsed_ms=8049
+[decode] sample_id=tok28672_s001_g512 status=200 elapsed_ms=30132
+[decode] sample_id=tok28672_s004_g256 status=200 elapsed_ms=11007
+[decode] sample_id=tok28672_s005_g128 status=200 elapsed_ms=7972
+[decode] sample_id=tok28672_s002_g512 status=200 elapsed_ms=30232
+[decode] sample_id=tok28672_s006_g128 status=200 elapsed_ms=7946
+[decode] sample_id=tok28672_s005_g256 status=200 elapsed_ms=10973
+[decode] sample_id=tok28672_s003_g512 status=200 elapsed_ms=30263
+[decode] sample_id=tok28672_s006_g256 status=200 elapsed_ms=10951
+[decode] sample_id=tok28672_s007_g128 status=200 elapsed_ms=7975
+[decode] sample_id=tok28672_s004_g512 status=200 elapsed_ms=30195
+[decode] sample_id=tok28672_s008_g128 status=200 elapsed_ms=7944
+[decode] sample_id=tok28672_s007_g256 status=200 elapsed_ms=10950
+[decode] sample_id=tok28672_s005_g512 status=200 elapsed_ms=30215
+[decode] sample_id=tok28672_s009_g128 status=200 elapsed_ms=7997
+[decode] sample_id=tok28672_s008_g256 status=200 elapsed_ms=11016
+[decode] sample_id=tok28672_s006_g512 status=200 elapsed_ms=30265
+[decode] sample_id=tok28672_s010_g128 status=200 elapsed_ms=8016
+[decode] sample_id=tok28672_s009_g256 status=200 elapsed_ms=11050
+[decode] sample_id=tok28672_s007_g512 status=200 elapsed_ms=30279
+[decode] sample_id=tok28672_s011_g128 status=200 elapsed_ms=8023
+[decode] sample_id=tok28672_s010_g256 status=200 elapsed_ms=10998
+[decode] sample_id=tok28672_s008_g512 status=200 elapsed_ms=25936
+[decode] sample_id=tok28672_s011_g256 status=200 elapsed_ms=6005
+[decode] sample_id=tok28672_s009_g512 status=200 elapsed_ms=20837
+[decode] sample_id=tok28672_s010_g512 status=200 elapsed_ms=15219
+[decode] sample_id=tok28672_s011_g512 status=200 elapsed_ms=9223
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/decode_samples.csv
+217 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/data/decode_samples.csv
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pd_imitation_trace.csv
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pd_imitation_summary.json
+19 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pd_imitation_trace.csv
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pcie_timeline.svg
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pcie_timeline_report.md
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pcie_timeline_window.csv
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct/summary/pcie_timeline_summary.json
+/usr/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+scripts/run_pd_imitation_full.sh: line 41: 1019703 Killed                  vllm serve "$MODEL_PATH" --served-model-name "$SERVED_MODEL" --host 127.0.0.1 --port "$PORT" --dtype bfloat16 --max-model-len 32768 --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" --max-num-seqs "$MAX_NUM_SEQS" --generation-config vllm 2>&1
+     1019704 Done                    | tee "$RUN_ROOT/logs/vllm_qwen3_8b_instruct.log"
+========== OFFLOAD SERVER + PIPELINE ==========
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:297] 
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:297]        █     █     █▄   ▄█
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:297]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.18.0
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:297]   █▄█▀ █     █     █     █  model   Qwen/Qwen3-8B
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:297]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:297] 
+(APIServer pid=1029874) INFO 03-29 14:16:00 [utils.py:233] non-default args: {'model_tag': 'Qwen/Qwen3-8B', 'host': '127.0.0.1', 'model': 'Qwen/Qwen3-8B', 'dtype': 'bfloat16', 'max_model_len': 32768, 'served_model_name': ['Qwen3-8B-Instruct'], 'generation_config': 'vllm', 'gpu_memory_utilization': 0.85, 'kv_offloading_size': 32.0, 'max_num_seqs': 6, 'disable_hybrid_kv_cache_manager': True}
+(APIServer pid=1029874) INFO 03-29 14:16:01 [model.py:533] Resolved architecture: Qwen3ForCausalLM
+(APIServer pid=1029874) INFO 03-29 14:16:01 [model.py:1582] Using max model len 32768
+(APIServer pid=1029874) INFO 03-29 14:16:01 [scheduler.py:231] Chunked prefill is enabled with max_num_batched_tokens=2048.
+(APIServer pid=1029874) INFO 03-29 14:16:01 [vllm.py:754] Asynchronous scheduling is enabled.
+(EngineCore pid=1030166) INFO 03-29 14:16:08 [core.py:103] Initializing a V1 LLM engine (v0.18.0) with config: model='Qwen/Qwen3-8B', speculative_config=None, tokenizer='Qwen/Qwen3-8B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=Qwen3-8B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::kda_attention', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 8, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}
+(EngineCore pid=1030166) INFO 03-29 14:16:08 [parallel_state.py:1395] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://10.26.12.48:34489 backend=nccl
+(EngineCore pid=1030166) INFO 03-29 14:16:08 [parallel_state.py:1717] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=1030166) INFO 03-29 14:16:09 [gpu_model_runner.py:4481] Starting to load model Qwen/Qwen3-8B...
+(EngineCore pid=1030166) INFO 03-29 14:16:09 [cuda.py:317] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=1030166) INFO 03-29 14:16:09 [flash_attn.py:598] Using FlashAttention version 2
+(EngineCore pid=1030166) Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+(EngineCore pid=1030166) Loading safetensors checkpoint shards:  20% Completed | 1/5 [00:00<00:01,  2.41it/s]
+(EngineCore pid=1030166) Loading safetensors checkpoint shards:  40% Completed | 2/5 [00:00<00:01,  2.11it/s]
+(EngineCore pid=1030166) Loading safetensors checkpoint shards:  60% Completed | 3/5 [00:01<00:00,  2.11it/s]
+(EngineCore pid=1030166) Loading safetensors checkpoint shards:  80% Completed | 4/5 [00:01<00:00,  2.44it/s]
+(EngineCore pid=1030166) Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:01<00:00,  3.13it/s]
+(EngineCore pid=1030166) Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:01<00:00,  2.67it/s]
+(EngineCore pid=1030166) 
+(EngineCore pid=1030166) INFO 03-29 14:16:13 [default_loader.py:384] Loading weights took 1.90 seconds
+(EngineCore pid=1030166) INFO 03-29 14:16:13 [gpu_model_runner.py:4566] Model loading took 15.27 GiB memory and 3.944408 seconds
+(EngineCore pid=1030166) INFO 03-29 14:16:16 [backends.py:988] Using cache directory: /home/danyang/.cache/vllm/torch_compile_cache/f917ab506a/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=1030166) INFO 03-29 14:16:16 [backends.py:1048] Dynamo bytecode transform time: 2.31 s
+(EngineCore pid=1030166) INFO 03-29 14:16:17 [backends.py:284] Directly load the compiled graph(s) for compile range (1, 2048) from the cache, took 0.950 s
+(EngineCore pid=1030166) INFO 03-29 14:16:17 [monitor.py:48] torch.compile took 3.53 s in total
+(EngineCore pid=1030166) INFO 03-29 14:16:17 [decorators.py:296] Directly load AOT compilation from path /home/danyang/.cache/vllm/torch_compile_cache/torch_aot_compile/5dc85ee71b1f528e1e2f6e26a37cf52cfff112db225dc7db0b5aed0399dd664c/rank_0_0/model
+(EngineCore pid=1030166) INFO 03-29 14:16:17 [monitor.py:76] Initial profiling/warmup run took 0.13 s
+(EngineCore pid=1030166) INFO 03-29 14:16:18 [kv_cache_utils.py:826] Overriding num_gpu_blocks=0 with num_gpu_blocks_override=8
+(EngineCore pid=1030166) INFO 03-29 14:16:18 [utils.py:44] Connectors do not specify a kv cache layout, defaulting to NHD.
+(EngineCore pid=1030166) INFO 03-29 14:16:18 [gpu_model_runner.py:5607] Profiling CUDA graph memory: PIECEWISE=4 (largest=8), FULL=3 (largest=4)
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [gpu_model_runner.py:5686] Estimated CUDA graph memory: 0.05 GiB total
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [gpu_worker.py:456] Available KV cache memory: 51.77 GiB
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [gpu_worker.py:490] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8500 to 0.8507 to maintain the same effective KV cache size.
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [kv_cache_utils.py:1316] GPU KV cache size: 376,960 tokens
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [kv_cache_utils.py:1321] Maximum concurrency for 32,768 tokens per request: 11.50x
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [factory.py:64] Creating v1 connector with name: OffloadingConnector and engine_id: 29405dc4-7edb-4dbd-9c95-775e122ed986
+(EngineCore pid=1030166) WARNING 03-29 14:16:19 [base.py:189] Initializing KVConnectorBase_V1. This API is experimental and subject to change in the future as we iterate the design.
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [factory.py:51] Creating offloading spec with name: CPUOffloadingSpec
+(EngineCore pid=1030166) WARNING 03-29 14:16:19 [spec.py:25] Initializing OffloadingSpec. This API is experimental and subject to change in the future as we iterate the design.
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [kv_connector_model_runner_mixin.py:272] Allocating a cross layer KV cache of shape (23560, 36, 2, 16, 8, 128)
+(EngineCore pid=1030166) INFO 03-29 14:16:19 [cpu_gpu.py:294] Allocating 1 CPU tensors...
+(EngineCore pid=1030166) Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/4 [00:00<?, ?it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 4/4 [00:00<00:00, 30.30it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 4/4 [00:00<00:00, 30.25it/s]
+(EngineCore pid=1030166) Capturing CUDA graphs (decode, FULL):   0%|          | 0/3 [00:00<?, ?it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 3/3 [00:00<00:00, 36.13it/s]
+(EngineCore pid=1030166) INFO 03-29 14:16:39 [gpu_model_runner.py:5746] Graph capturing finished in 1 secs, took 0.04 GiB
+(EngineCore pid=1030166) INFO 03-29 14:16:39 [gpu_worker.py:617] CUDA graph pool memory: 0.04 GiB (actual), 0.05 GiB (estimated), difference: 0.01 GiB (35.0%).
+(EngineCore pid=1030166) INFO 03-29 14:16:39 [core.py:281] init engine (profile, create kv cache, warmup model) took 25.85 seconds
+(EngineCore pid=1030166) INFO 03-29 14:16:41 [factory.py:64] Creating v1 connector with name: OffloadingConnector and engine_id: 29405dc4-7edb-4dbd-9c95-775e122ed986
+(EngineCore pid=1030166) WARNING 03-29 14:16:41 [base.py:189] Initializing KVConnectorBase_V1. This API is experimental and subject to change in the future as we iterate the design.
+(EngineCore pid=1030166) INFO 03-29 14:16:41 [factory.py:51] Creating offloading spec with name: CPUOffloadingSpec
+(EngineCore pid=1030166) WARNING 03-29 14:16:41 [spec.py:25] Initializing OffloadingSpec. This API is experimental and subject to change in the future as we iterate the design.
+(EngineCore pid=1030166) INFO 03-29 14:16:41 [vllm.py:754] Asynchronous scheduling is enabled.
+(APIServer pid=1029874) INFO 03-29 14:16:41 [api_server.py:576] Supported tasks: ['generate']
+(APIServer pid=1029874) INFO 03-29 14:16:45 [hf.py:320] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=1029874) INFO 03-29 14:16:45 [api_server.py:580] Starting vLLM server on http://127.0.0.1:8000
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:37] Available routes are:
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /docs, Methods: GET, HEAD
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /tokenize, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /detokenize, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /load, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /version, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /health, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /metrics, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/models, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /ping, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /ping, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /invocations, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/responses, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/completions, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/messages, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=1029874) INFO 03-29 14:16:45 [launcher.py:46] Route: /v1/completions/render, Methods: POST
+(APIServer pid=1029874) INFO:     Started server process [1029874]
+(APIServer pid=1029874) INFO:     Waiting for application startup.
+(APIServer pid=1029874) INFO:     Application startup complete.
+(APIServer pid=1029874) INFO:     127.0.0.1:41600 - "GET /health HTTP/1.1" 200 OK
+health ok
+=== pipeline RUN_ROOT=/home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload ===
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/prefill_prompts.jsonl
+72 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/prefill_prompts.jsonl
+(APIServer pid=1029874) INFO:     127.0.0.1:56586 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56596 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56602 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56606 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56612 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56626 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56634 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56644 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56650 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56664 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56678 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56686 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56694 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56696 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56702 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56710 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56714 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56730 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:19:05 [loggers.py:259] Engine 000: Avg prompt throughput: 4617.1 tokens/s, Avg generation throughput: 1.8 tokens/s, Running: 1 reqs, Waiting: 4 reqs, GPU KV cache usage: 1.9%, Prefix cache hit rate: 5.9%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:19:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6341787648, GPU_to_CPU_total_time=0.27722191843390465
+(APIServer pid=1029874) INFO:     127.0.0.1:56742 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56750 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56766 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56780 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56796 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56798 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56814 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56818 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56826 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56842 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56850 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56858 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56868 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56878 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40344 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40346 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40354 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:19:15 [loggers.py:259] Engine 000: Avg prompt throughput: 11170.0 tokens/s, Avg generation throughput: 1.7 tokens/s, Running: 1 reqs, Waiting: 4 reqs, GPU KV cache usage: 3.8%, Prefix cache hit rate: 3.6%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:19:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=16911433728, GPU_to_CPU_total_time=0.7351450245976449
+(APIServer pid=1029874) INFO:     127.0.0.1:40368 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40376 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40390 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40398 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40404 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40414 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:19:25 [loggers.py:259] Engine 000: Avg prompt throughput: 8906.9 tokens/s, Avg generation throughput: 0.6 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 3.5%, Prefix cache hit rate: 2.7%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:19:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=14193524736, GPU_to_CPU_total_time=0.6188666538596151
+(APIServer pid=1029874) INFO:     127.0.0.1:40420 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40436 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54440 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54452 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54468 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54482 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:19:35 [loggers.py:259] Engine 000: Avg prompt throughput: 9724.4 tokens/s, Avg generation throughput: 0.6 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 2.7%, Prefix cache hit rate: 2.2%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:19:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=13891534848, GPU_to_CPU_total_time=0.6069639664888384
+(APIServer pid=1029874) INFO:     127.0.0.1:54492 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54500 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:53810 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:53818 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:19:45 [loggers.py:259] Engine 000: Avg prompt throughput: 8941.8 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 4 reqs, GPU KV cache usage: 7.8%, Prefix cache hit rate: 1.9%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:19:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=12381585408, GPU_to_CPU_total_time=0.5413061766177415
+(APIServer pid=1029874) INFO:     127.0.0.1:53834 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:53838 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:53840 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:19:55 [loggers.py:259] Engine 000: Avg prompt throughput: 7319.6 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 4.1%, Prefix cache hit rate: 1.7%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:19:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=12381585408, GPU_to_CPU_total_time=0.5456367018222809
+(APIServer pid=1029874) INFO:     127.0.0.1:54064 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54076 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54092 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:20:05 [loggers.py:259] Engine 000: Avg prompt throughput: 7319.7 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 5.9%, Prefix cache hit rate: 1.6%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:20:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=11777605632, GPU_to_CPU_total_time=0.5200436794757843
+(APIServer pid=1029874) INFO:     127.0.0.1:54108 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:45134 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:45142 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:20:15 [loggers.py:259] Engine 000: Avg prompt throughput: 7319.5 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 2 reqs, Waiting: 4 reqs, GPU KV cache usage: 7.7%, Prefix cache hit rate: 1.5%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:20:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=11777605632, GPU_to_CPU_total_time=0.5210705600976946
+(APIServer pid=1029874) INFO:     127.0.0.1:45156 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:49562 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:49566 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:20:25 [loggers.py:259] Engine 000: Avg prompt throughput: 8549.9 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 5.6%, Prefix cache hit rate: 1.4%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:20:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=11475615744, GPU_to_CPU_total_time=0.5080182728767395
+(APIServer pid=1029874) INFO:     127.0.0.1:49574 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:53778 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:53780 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:20:35 [loggers.py:259] Engine 000: Avg prompt throughput: 8548.4 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 5 reqs, GPU KV cache usage: 3.1%, Prefix cache hit rate: 1.3%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:20:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=11173625856, GPU_to_CPU_total_time=0.4947451190948485
+(APIServer pid=1029874) INFO:     127.0.0.1:53784 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:34216 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:20:45 [loggers.py:259] Engine 000: Avg prompt throughput: 5698.4 tokens/s, Avg generation throughput: 0.2 tokens/s, Running: 1 reqs, Waiting: 3 reqs, GPU KV cache usage: 7.5%, Prefix cache hit rate: 1.3%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:20:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=10871635968, GPU_to_CPU_total_time=0.48106403350830085
+(APIServer pid=1029874) INFO:     127.0.0.1:34222 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:34234 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:45186 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:20:55 [loggers.py:259] Engine 000: Avg prompt throughput: 8548.4 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 1.2%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:20:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=11777605632, GPU_to_CPU_total_time=0.5218440360724926
+(APIServer pid=1029874) INFO:     127.0.0.1:45196 - "POST /v1/completions HTTP/1.1" 200 OK
+[prefill] sample_id=tok2048_s002 status=200 elapsed_ms=369
+[prefill] sample_id=tok2048_s004 status=200 elapsed_ms=528
+[prefill] sample_id=tok2048_s001 status=200 elapsed_ms=686
+[prefill] sample_id=tok2048_s005 status=200 elapsed_ms=838
+[prefill] sample_id=tok2048_s000 status=200 elapsed_ms=1000
+[prefill] sample_id=tok2048_s003 status=200 elapsed_ms=1152
+[prefill] sample_id=tok2048_s006 status=200 elapsed_ms=942
+[prefill] sample_id=tok2048_s007 status=200 elapsed_ms=938
+[prefill] sample_id=tok2048_s008 status=200 elapsed_ms=940
+[prefill] sample_id=tok2048_s009 status=200 elapsed_ms=942
+[prefill] sample_id=tok2048_s010 status=200 elapsed_ms=943
+[prefill] sample_id=tok2048_s011 status=200 elapsed_ms=945
+[prefill] sample_id=tok4096_s000 status=200 elapsed_ms=960
+[prefill] sample_id=tok4096_s001 status=200 elapsed_ms=1129
+[prefill] sample_id=tok4096_s002 status=200 elapsed_ms=1302
+[prefill] sample_id=tok4096_s003 status=200 elapsed_ms=1474
+[prefill] sample_id=tok4096_s004 status=200 elapsed_ms=1647
+[prefill] sample_id=tok4096_s005 status=200 elapsed_ms=1819
+[prefill] sample_id=tok4096_s006 status=200 elapsed_ms=1977
+[prefill] sample_id=tok4096_s007 status=200 elapsed_ms=1984
+[prefill] sample_id=tok4096_s008 status=200 elapsed_ms=1985
+[prefill] sample_id=tok4096_s009 status=200 elapsed_ms=1985
+[prefill] sample_id=tok4096_s010 status=200 elapsed_ms=1989
+[prefill] sample_id=tok4096_s011 status=200 elapsed_ms=1989
+[prefill] sample_id=tok8192_s000 status=200 elapsed_ms=2228
+[prefill] sample_id=tok8192_s001 status=200 elapsed_ms=2619
+[prefill] sample_id=tok8192_s002 status=200 elapsed_ms=3011
+[prefill] sample_id=tok8192_s003 status=200 elapsed_ms=3405
+[prefill] sample_id=tok8192_s004 status=200 elapsed_ms=3796
+[prefill] sample_id=tok8192_s005 status=200 elapsed_ms=4193
+[prefill] sample_id=tok8192_s006 status=200 elapsed_ms=4350
+[prefill] sample_id=tok8192_s007 status=200 elapsed_ms=4358
+[prefill] sample_id=tok8192_s008 status=200 elapsed_ms=4361
+[prefill] sample_id=tok8192_s009 status=200 elapsed_ms=4367
+[prefill] sample_id=tok8192_s010 status=200 elapsed_ms=4372
+[prefill] sample_id=tok8192_s011 status=200 elapsed_ms=4379
+[prefill] sample_id=tok16384_s000 status=200 elapsed_ms=5206
+[prefill] sample_id=tok16384_s001 status=200 elapsed_ms=6178
+[prefill] sample_id=tok16384_s002 status=200 elapsed_ms=7167
+[prefill] sample_id=tok16384_s003 status=200 elapsed_ms=8156
+[prefill] sample_id=tok16384_s004 status=200 elapsed_ms=9140
+[prefill] sample_id=tok16384_s005 status=200 elapsed_ms=10120
+[prefill] sample_id=tok16384_s006 status=200 elapsed_ms=10288
+[prefill] sample_id=tok16384_s007 status=200 elapsed_ms=10312
+[prefill] sample_id=tok16384_s008 status=200 elapsed_ms=10328
+[prefill] sample_id=tok16384_s009 status=200 elapsed_ms=10337
+[prefill] sample_id=tok16384_s010 status=200 elapsed_ms=10357
+[prefill] sample_id=tok16384_s011 status=200 elapsed_ms=10205
+[prefill] sample_id=tok24576_s000 status=200 elapsed_ms=11453
+[prefill] sample_id=tok24576_s001 status=200 elapsed_ms=12698
+[prefill] sample_id=tok24576_s002 status=200 elapsed_ms=13945
+[prefill] sample_id=tok24576_s003 status=200 elapsed_ms=15206
+[prefill] sample_id=tok24576_s004 status=200 elapsed_ms=16455
+[prefill] sample_id=tok24576_s005 status=200 elapsed_ms=17894
+[prefill] sample_id=tok24576_s006 status=200 elapsed_ms=17920
+[prefill] sample_id=tok24576_s007 status=200 elapsed_ms=17959
+[prefill] sample_id=tok24576_s008 status=200 elapsed_ms=17992
+[prefill] sample_id=tok24576_s009 status=200 elapsed_ms=18016
+[prefill] sample_id=tok24576_s010 status=200 elapsed_ms=18058
+[prefill] sample_id=tok24576_s011 status=200 elapsed_ms=17897
+[prefill] sample_id=tok28672_s000 status=200 elapsed_ms=18632
+[prefill] sample_id=tok28672_s001 status=200 elapsed_ms=19350
+[prefill] sample_id=tok28672_s002 status=200 elapsed_ms=20067
+[prefill] sample_id=tok28672_s003 status=200 elapsed_ms=20774
+[prefill] sample_id=tok28672_s004 status=200 elapsed_ms=21490
+[prefill] sample_id=tok28672_s005 status=200 elapsed_ms=22402
+[prefill] sample_id=tok28672_s006 status=200 elapsed_ms=22415
+[prefill] sample_id=tok28672_s007 status=200 elapsed_ms=22439
+[prefill] sample_id=tok28672_s008 status=200 elapsed_ms=22471
+[prefill] sample_id=tok28672_s009 status=200 elapsed_ms=22512
+[prefill] sample_id=tok28672_s010 status=200 elapsed_ms=22542
+[prefill] sample_id=tok28672_s011 status=200 elapsed_ms=22351
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/prefill_samples.csv
+73 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/prefill_samples.csv
+(APIServer pid=1029874) INFO 03-29 14:21:05 [loggers.py:259] Engine 000: Avg prompt throughput: 2849.6 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.6%, Prefix cache hit rate: 1.2%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:21:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=1509949440, GPU_to_CPU_total_time=0.06665321636199951
+(APIServer pid=1029874) INFO 03-29 14:21:15 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.6%, Prefix cache hit rate: 1.2%, External prefix cache hit rate: 0.0%
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/decode_prompts.jsonl
+72 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/decode_prompts.jsonl
+(APIServer pid=1029874) INFO:     127.0.0.1:58540 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58558 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58534 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58574 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58594 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58588 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38408 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58536 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58546 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38414 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38432 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:23:15 [loggers.py:259] Engine 000: Avg prompt throughput: 1140.9 tokens/s, Avg generation throughput: 380.7 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.3%, Prefix cache hit rate: 3.4%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:23:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=2210660352, GPU_to_CPU_total_time=0.09657728036493061, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00014556799829006195
+(APIServer pid=1029874) INFO:     127.0.0.1:38454 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38396 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38444 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38458 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38476 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38420 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38434 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38480 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54324 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54342 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54332 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38470 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54344 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:38490 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54360 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:23:25 [loggers.py:259] Engine 000: Avg prompt throughput: 949.0 tokens/s, Avg generation throughput: 444.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.3%, Prefix cache hit rate: 5.3%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:23:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=1816657920, GPU_to_CPU_total_time=0.07941148712486029, CPU_to_GPU_total_bytes=4718592, CPU_to_GPU_total_time=0.00021440000087022783
+(APIServer pid=1029874) INFO:     127.0.0.1:54388 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54374 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54340 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54390 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54410 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54350 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54446 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54420 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54378 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36890 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36876 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54394 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36892 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:54436 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36902 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:23:35 [loggers.py:259] Engine 000: Avg prompt throughput: 1374.6 tokens/s, Avg generation throughput: 403.5 tokens/s, Running: 5 reqs, Waiting: 0 reqs, GPU KV cache usage: 3.9%, Prefix cache hit rate: 7.9%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:23:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=2378170368, GPU_to_CPU_total_time=0.10438595288991935, CPU_to_GPU_total_bytes=7077888, CPU_to_GPU_total_time=0.00035014399886131286
+(APIServer pid=1029874) INFO:     127.0.0.1:36914 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36918 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36882 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36932 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36954 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36894 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36956 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60360 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36916 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60390 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60370 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:36946 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:23:45 [loggers.py:259] Engine 000: Avg prompt throughput: 1579.1 tokens/s, Avg generation throughput: 381.5 tokens/s, Running: 5 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.6%, Prefix cache hit rate: 10.4%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:23:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=2623537152, GPU_to_CPU_total_time=0.11596764812618499, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00010236799716949463
+(APIServer pid=1029874) INFO:     127.0.0.1:60402 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60408 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60356 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60414 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60424 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60374 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60440 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46882 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60404 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46884 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46900 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60420 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:23:55 [loggers.py:259] Engine 000: Avg prompt throughput: 1972.6 tokens/s, Avg generation throughput: 381.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.5%, Prefix cache hit rate: 13.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:23:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=3227516928, GPU_to_CPU_total_time=0.1439170864149928
+(APIServer pid=1029874) INFO:     127.0.0.1:46934 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46906 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46878 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46962 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46948 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46896 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46966 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59178 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46922 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59192 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59198 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46954 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:24:05 [loggers.py:259] Engine 000: Avg prompt throughput: 2414.2 tokens/s, Avg generation throughput: 312.7 tokens/s, Running: 5 reqs, Waiting: 0 reqs, GPU KV cache usage: 8.3%, Prefix cache hit rate: 16.3%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:24:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=3848011776, GPU_to_CPU_total_time=0.17081129763275382, CPU_to_GPU_total_bytes=7077888, CPU_to_GPU_total_time=0.0003799679949879647
+(APIServer pid=1029874) INFO:     127.0.0.1:59212 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59228 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46978 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59238 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59260 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59196 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39346 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39370 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:24:15 [loggers.py:259] Engine 000: Avg prompt throughput: 3215.7 tokens/s, Avg generation throughput: 271.6 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 11.0%, Prefix cache hit rate: 19.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:24:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5001707520, GPU_to_CPU_total_time=0.22409696297347548
+(APIServer pid=1029874) INFO:     127.0.0.1:59214 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39386 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:59248 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39380 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39388 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39394 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39358 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39398 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37474 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39384 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:24:25 [loggers.py:259] Engine 000: Avg prompt throughput: 2414.5 tokens/s, Avg generation throughput: 300.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 8.8%, Prefix cache hit rate: 21.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:24:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=3819700224, GPU_to_CPU_total_time=0.1720478397458791, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00013462400436401367
+(APIServer pid=1029874) INFO:     127.0.0.1:37482 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37496 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:39392 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37510 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37522 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37468 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37528 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47672 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:24:35 [loggers.py:259] Engine 000: Avg prompt throughput: 3232.0 tokens/s, Avg generation throughput: 252.2 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 13.2%, Prefix cache hit rate: 23.5%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:24:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4992270336, GPU_to_CPU_total_time=0.22376003153622154, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00016784000396728515
+(APIServer pid=1029874) INFO:     127.0.0.1:37488 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47716 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47686 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37516 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47720 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47744 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47660 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:24:45 [loggers.py:259] Engine 000: Avg prompt throughput: 3246.4 tokens/s, Avg generation throughput: 208.2 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 15.4%, Prefix cache hit rate: 26.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:24:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4954521600, GPU_to_CPU_total_time=0.21884076669812205, CPU_to_GPU_total_bytes=4718592, CPU_to_GPU_total_time=0.00023388800024986268
+(APIServer pid=1029874) INFO:     127.0.0.1:50376 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50408 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47700 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50416 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50434 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47728 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:24:55 [loggers.py:259] Engine 000: Avg prompt throughput: 3248.0 tokens/s, Avg generation throughput: 191.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 17.6%, Prefix cache hit rate: 29.1%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:24:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4980473856, GPU_to_CPU_total_time=0.22286966479569673
+(APIServer pid=1029874) INFO:     127.0.0.1:47508 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47492 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50392 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47514 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47538 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50428 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40434 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:25:05 [loggers.py:259] Engine 000: Avg prompt throughput: 3246.5 tokens/s, Avg generation throughput: 188.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 17.6%, Prefix cache hit rate: 31.7%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:25:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4994629632, GPU_to_CPU_total_time=0.22362006344646213, CPU_to_GPU_total_bytes=4718592, CPU_to_GPU_total_time=0.00030323199927806855
+(APIServer pid=1029874) INFO:     127.0.0.1:40414 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47498 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40442 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40466 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:47530 - "POST /v1/completions HTTP/1.1" 200 OK
+[decode] sample_id=tok2048_s001_g128 status=200 elapsed_ms=2104
+[decode] sample_id=tok2048_s000_g128 status=200 elapsed_ms=2108
+[decode] sample_id=tok2048_s000_g256 status=200 elapsed_ms=3798
+[decode] sample_id=tok2048_s001_g256 status=200 elapsed_ms=3808
+[decode] sample_id=tok2048_s002_g128 status=200 elapsed_ms=1757
+[decode] sample_id=tok2048_s002_g256 status=200 elapsed_ms=3470
+[decode] sample_id=tok2048_s003_g128 status=200 elapsed_ms=1765
+[decode] sample_id=tok2048_s001_g512 status=200 elapsed_ms=7275
+[decode] sample_id=tok2048_s000_g512 status=200 elapsed_ms=7278
+[decode] sample_id=tok2048_s003_g256 status=200 elapsed_ms=3477
+[decode] sample_id=tok2048_s004_g128 status=200 elapsed_ms=1776
+[decode] sample_id=tok2048_s005_g128 status=200 elapsed_ms=1762
+[decode] sample_id=tok2048_s002_g512 status=200 elapsed_ms=6816
+[decode] sample_id=tok2048_s004_g256 status=200 elapsed_ms=3348
+[decode] sample_id=tok2048_s005_g256 status=200 elapsed_ms=3499
+[decode] sample_id=tok2048_s006_g128 status=200 elapsed_ms=1759
+[decode] sample_id=tok2048_s003_g512 status=200 elapsed_ms=6987
+[decode] sample_id=tok2048_s004_g512 status=200 elapsed_ms=6813
+[decode] sample_id=tok2048_s006_g256 status=200 elapsed_ms=3503
+[decode] sample_id=tok2048_s007_g128 status=200 elapsed_ms=1772
+[decode] sample_id=tok2048_s008_g128 status=200 elapsed_ms=1752
+[decode] sample_id=tok2048_s007_g256 status=200 elapsed_ms=3356
+[decode] sample_id=tok2048_s005_g512 status=200 elapsed_ms=6842
+[decode] sample_id=tok2048_s008_g256 status=200 elapsed_ms=3488
+[decode] sample_id=tok2048_s006_g512 status=200 elapsed_ms=6807
+[decode] sample_id=tok2048_s009_g128 status=200 elapsed_ms=1769
+[decode] sample_id=tok2048_s010_g128 status=200 elapsed_ms=1756
+[decode] sample_id=tok2048_s009_g256 status=200 elapsed_ms=3483
+[decode] sample_id=tok2048_s007_g512 status=200 elapsed_ms=6966
+[decode] sample_id=tok2048_s010_g256 status=200 elapsed_ms=3497
+[decode] sample_id=tok2048_s011_g128 status=200 elapsed_ms=1782
+[decode] sample_id=tok2048_s008_g512 status=200 elapsed_ms=7240
+[decode] sample_id=tok4096_s000_g128 status=200 elapsed_ms=2019
+[decode] sample_id=tok2048_s011_g256 status=200 elapsed_ms=3646
+[decode] sample_id=tok2048_s009_g512 status=200 elapsed_ms=7271
+[decode] sample_id=tok4096_s001_g128 status=200 elapsed_ms=2051
+[decode] sample_id=tok4096_s000_g256 status=200 elapsed_ms=3684
+[decode] sample_id=tok2048_s010_g512 status=200 elapsed_ms=7431
+[decode] sample_id=tok4096_s001_g256 status=200 elapsed_ms=3886
+[decode] sample_id=tok2048_s011_g512 status=200 elapsed_ms=7665
+[decode] sample_id=tok4096_s002_g128 status=200 elapsed_ms=2067
+[decode] sample_id=tok4096_s002_g256 status=200 elapsed_ms=4063
+[decode] sample_id=tok4096_s003_g128 status=200 elapsed_ms=2072
+[decode] sample_id=tok4096_s000_g512 status=200 elapsed_ms=7751
+[decode] sample_id=tok4096_s003_g256 status=200 elapsed_ms=4092
+[decode] sample_id=tok4096_s004_g128 status=200 elapsed_ms=2103
+[decode] sample_id=tok4096_s001_g512 status=200 elapsed_ms=8182
+[decode] sample_id=tok4096_s004_g256 status=200 elapsed_ms=4108
+[decode] sample_id=tok4096_s005_g128 status=200 elapsed_ms=2103
+[decode] sample_id=tok4096_s002_g512 status=200 elapsed_ms=8201
+[decode] sample_id=tok4096_s006_g128 status=200 elapsed_ms=2107
+[decode] sample_id=tok4096_s005_g256 status=200 elapsed_ms=3804
+[decode] sample_id=tok4096_s003_g512 status=200 elapsed_ms=8036
+[decode] sample_id=tok4096_s006_g256 status=200 elapsed_ms=3778
+[decode] sample_id=tok4096_s007_g128 status=200 elapsed_ms=2089
+[decode] sample_id=tok4096_s004_g512 status=200 elapsed_ms=7889
+[decode] sample_id=tok4096_s007_g256 status=200 elapsed_ms=3934
+[decode] sample_id=tok4096_s008_g128 status=200 elapsed_ms=2077
+[decode] sample_id=tok4096_s005_g512 status=200 elapsed_ms=7863
+[decode] sample_id=tok4096_s008_g256 status=200 elapsed_ms=4098
+[decode] sample_id=tok4096_s009_g128 status=200 elapsed_ms=2086
+[decode] sample_id=tok4096_s006_g512 status=200 elapsed_ms=8187
+[decode] sample_id=tok4096_s009_g256 status=200 elapsed_ms=4089
+[decode] sample_id=tok4096_s010_g128 status=200 elapsed_ms=2088
+[decode] sample_id=tok4096_s007_g512 status=200 elapsed_ms=8196
+[decode] sample_id=tok4096_s011_g128 status=200 elapsed_ms=2115
+[decode] sample_id=tok4096_s010_g256 status=200 elapsed_ms=3814
+[decode] sample_id=tok4096_s008_g512 status=200 elapsed_ms=8698
+[decode] sample_id=tok8192_s000_g128 status=200 elapsed_ms=2650
+[decode] sample_id=tok4096_s011_g256 status=200 elapsed_ms=4411
+[decode] sample_id=tok4096_s009_g512 status=200 elapsed_ms=8841
+[decode] sample_id=tok8192_s001_g128 status=200 elapsed_ms=2744
+[decode] sample_id=tok8192_s000_g256 status=200 elapsed_ms=4542
+[decode] sample_id=tok4096_s010_g512 status=200 elapsed_ms=9118
+[decode] sample_id=tok8192_s001_g256 status=200 elapsed_ms=4988
+[decode] sample_id=tok8192_s002_g128 status=200 elapsed_ms=2790
+[decode] sample_id=tok4096_s011_g512 status=200 elapsed_ms=9759
+[decode] sample_id=tok8192_s002_g256 status=200 elapsed_ms=5426
+[decode] sample_id=tok8192_s003_g128 status=200 elapsed_ms=2790
+[decode] sample_id=tok8192_s000_g512 status=200 elapsed_ms=10452
+[decode] sample_id=tok8192_s003_g256 status=200 elapsed_ms=5443
+[decode] sample_id=tok8192_s004_g128 status=200 elapsed_ms=2813
+[decode] sample_id=tok8192_s001_g512 status=200 elapsed_ms=10906
+[decode] sample_id=tok8192_s004_g256 status=200 elapsed_ms=4942
+[decode] sample_id=tok8192_s005_g128 status=200 elapsed_ms=2857
+[decode] sample_id=tok8192_s002_g512 status=200 elapsed_ms=10925
+[decode] sample_id=tok8192_s006_g128 status=200 elapsed_ms=2835
+[decode] sample_id=tok8192_s003_g512 status=200 elapsed_ms=10194
+[decode] sample_id=tok8192_s005_g256 status=200 elapsed_ms=4767
+[decode] sample_id=tok8192_s006_g256 status=200 elapsed_ms=4702
+[decode] sample_id=tok8192_s007_g128 status=200 elapsed_ms=2792
+[decode] sample_id=tok8192_s004_g512 status=200 elapsed_ms=10187
+[decode] sample_id=tok8192_s007_g256 status=200 elapsed_ms=5460
+[decode] sample_id=tok8192_s008_g128 status=200 elapsed_ms=2798
+[decode] sample_id=tok8192_s005_g512 status=200 elapsed_ms=10135
+[decode] sample_id=tok8192_s008_g256 status=200 elapsed_ms=5477
+[decode] sample_id=tok8192_s009_g128 status=200 elapsed_ms=2808
+[decode] sample_id=tok8192_s006_g512 status=200 elapsed_ms=10860
+[decode] sample_id=tok8192_s009_g256 status=200 elapsed_ms=5472
+[decode] sample_id=tok8192_s010_g128 status=200 elapsed_ms=2826
+[decode] sample_id=tok8192_s007_g512 status=200 elapsed_ms=10891
+[decode] sample_id=tok8192_s011_g128 status=200 elapsed_ms=2844
+[decode] sample_id=tok8192_s010_g256 status=200 elapsed_ms=4783
+[decode] sample_id=tok8192_s008_g512 status=200 elapsed_ms=12081
+[decode] sample_id=tok16384_s000_g128 status=200 elapsed_ms=4173
+[decode] sample_id=tok8192_s011_g256 status=200 elapsed_ms=6144
+[decode] sample_id=tok8192_s009_g512 status=200 elapsed_ms=13402
+[decode] sample_id=tok16384_s000_g256 status=200 elapsed_ms=6461
+[decode] sample_id=tok16384_s001_g128 status=200 elapsed_ms=4368
+[decode] sample_id=tok8192_s010_g512 status=200 elapsed_ms=13863
+[decode] sample_id=tok16384_s001_g256 status=200 elapsed_ms=6630
+[decode] sample_id=tok16384_s002_g128 status=200 elapsed_ms=4431
+[decode] sample_id=tok8192_s011_g512 status=200 elapsed_ms=16607
+[decode] sample_id=tok16384_s002_g256 status=200 elapsed_ms=7806
+[decode] sample_id=tok16384_s003_g128 status=200 elapsed_ms=4521
+[decode] sample_id=tok16384_s000_g512 status=200 elapsed_ms=16900
+[decode] sample_id=tok16384_s004_g128 status=200 elapsed_ms=4575
+[decode] sample_id=tok16384_s003_g256 status=200 elapsed_ms=6923
+[decode] sample_id=tok16384_s001_g512 status=200 elapsed_ms=17431
+[decode] sample_id=tok16384_s004_g256 status=200 elapsed_ms=6919
+[decode] sample_id=tok16384_s005_g128 status=200 elapsed_ms=4554
+[decode] sample_id=tok16384_s002_g512 status=200 elapsed_ms=17429
+[decode] sample_id=tok16384_s006_g128 status=200 elapsed_ms=4597
+[decode] sample_id=tok16384_s005_g256 status=200 elapsed_ms=6950
+[decode] sample_id=tok16384_s003_g512 status=200 elapsed_ms=15637
+[decode] sample_id=tok16384_s006_g256 status=200 elapsed_ms=6820
+[decode] sample_id=tok16384_s007_g128 status=200 elapsed_ms=4472
+(APIServer pid=1029874) INFO:     127.0.0.1:40470 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:25:15 [loggers.py:259] Engine 000: Avg prompt throughput: 3245.5 tokens/s, Avg generation throughput: 193.5 tokens/s, Running: 5 reqs, Waiting: 0 reqs, GPU KV cache usage: 17.6%, Prefix cache hit rate: 32.9%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:25:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4959240192, GPU_to_CPU_total_time=0.22199897745251643
+(APIServer pid=1029874) INFO:     127.0.0.1:41928 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40426 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41934 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41946 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40450 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41958 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37316 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:25:25 [loggers.py:259] Engine 000: Avg prompt throughput: 3249.4 tokens/s, Avg generation throughput: 173.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.2%, Prefix cache hit rate: 34.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:25:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4914413568, GPU_to_CPU_total_time=0.220602400265634
+(APIServer pid=1029874) INFO:     127.0.0.1:41914 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37326 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37350 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41944 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:25:35 [loggers.py:259] Engine 000: Avg prompt throughput: 4067.1 tokens/s, Avg generation throughput: 157.8 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.8%, Prefix cache hit rate: 36.1%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:25:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6138888192, GPU_to_CPU_total_time=0.276985407344997
+(APIServer pid=1029874) INFO:     127.0.0.1:48810 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37358 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37300 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:48816 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:48834 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:25:45 [loggers.py:259] Engine 000: Avg prompt throughput: 2441.8 tokens/s, Avg generation throughput: 127.2 tokens/s, Running: 5 reqs, Waiting: 1 reqs, GPU KV cache usage: 26.3%, Prefix cache hit rate: 37.4%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:25:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5251792896, GPU_to_CPU_total_time=0.23432332909852271, CPU_to_GPU_total_bytes=4718592, CPU_to_GPU_total_time=0.00025075200945138935
+(APIServer pid=1029874) INFO:     127.0.0.1:37338 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:57054 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:57044 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:48800 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:25:55 [loggers.py:259] Engine 000: Avg prompt throughput: 4883.2 tokens/s, Avg generation throughput: 135.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 26.3%, Prefix cache hit rate: 39.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:25:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5834539008, GPU_to_CPU_total_time=0.2620191998556257, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00010995200276374817
+(APIServer pid=1029874) INFO:     127.0.0.1:57062 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58888 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:48820 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58894 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58920 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:26:05 [loggers.py:259] Engine 000: Avg prompt throughput: 2444.5 tokens/s, Avg generation throughput: 119.0 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 30.6%, Prefix cache hit rate: 40.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:26:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5239996416, GPU_to_CPU_total_time=0.23587286447733652
+(APIServer pid=1029874) INFO:     127.0.0.1:57052 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56350 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:56368 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58872 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:26:15 [loggers.py:259] Engine 000: Avg prompt throughput: 4882.8 tokens/s, Avg generation throughput: 124.6 tokens/s, Running: 5 reqs, Waiting: 0 reqs, GPU KV cache usage: 32.8%, Prefix cache hit rate: 40.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:26:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5806227456, GPU_to_CPU_total_time=0.26253065650910146
+(APIServer pid=1029874) INFO:     127.0.0.1:41848 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41838 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:58906 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41854 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41862 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:26:25 [loggers.py:259] Engine 000: Avg prompt throughput: 2444.8 tokens/s, Avg generation throughput: 160.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 27.4%, Prefix cache hit rate: 42.2%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:26:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=3734765568, GPU_to_CPU_total_time=0.16785107138007876, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00013702400028705596
+(APIServer pid=1029874) INFO:     127.0.0.1:56358 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40044 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40060 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:26:35 [loggers.py:259] Engine 000: Avg prompt throughput: 2442.9 tokens/s, Avg generation throughput: 88.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 32.7%, Prefix cache hit rate: 42.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:26:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6407847936, GPU_to_CPU_total_time=0.2898764826953411
+(APIServer pid=1029874) INFO:     127.0.0.1:41846 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:40062 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:55626 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:41858 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:55634 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:55642 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:26:45 [loggers.py:259] Engine 000: Avg prompt throughput: 4886.0 tokens/s, Avg generation throughput: 162.4 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 26.8%, Prefix cache hit rate: 44.0%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:26:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4690280448, GPU_to_CPU_total_time=0.21320009635388854
+(APIServer pid=1029874) INFO:     127.0.0.1:40048 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:43504 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:43524 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:26:55 [loggers.py:259] Engine 000: Avg prompt throughput: 2442.9 tokens/s, Avg generation throughput: 88.9 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 32.7%, Prefix cache hit rate: 44.5%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:26:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6417285120, GPU_to_CPU_total_time=0.2911514230594038
+(APIServer pid=1029874) INFO:     127.0.0.1:55614 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50492 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50464 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:27:05 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.6 tokens/s, Avg generation throughput: 114.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 34.9%, Prefix cache hit rate: 45.2%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:27:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4942725120, GPU_to_CPU_total_time=0.22349366537481546, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00012979200482368469
+(APIServer pid=1029874) INFO:     127.0.0.1:55636 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50506 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50452 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:43520 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:27:15 [loggers.py:259] Engine 000: Avg prompt throughput: 5703.5 tokens/s, Avg generation throughput: 131.5 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 29.5%, Prefix cache hit rate: 46.2%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:27:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5223481344, GPU_to_CPU_total_time=0.23713955123722552
+(APIServer pid=1029874) INFO:     127.0.0.1:50464 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:45086 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:50480 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:45096 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:45110 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:27:25 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.7 tokens/s, Avg generation throughput: 117.8 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 32.8%, Prefix cache hit rate: 46.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:27:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4636016640, GPU_to_CPU_total_time=0.2108242872729897, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00016806399822235109
+(APIServer pid=1029874) INFO:     127.0.0.1:50446 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60810 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60836 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:27:35 [loggers.py:259] Engine 000: Avg prompt throughput: 2851.0 tokens/s, Avg generation throughput: 86.9 tokens/s, Running: 5 reqs, Waiting: 1 reqs, GPU KV cache usage: 36.0%, Prefix cache hit rate: 47.3%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:27:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6120013824, GPU_to_CPU_total_time=0.27753507155925045, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.0001701440066099167
+(APIServer pid=1029874) INFO:     127.0.0.1:50472 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46968 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46942 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:27:45 [loggers.py:259] Engine 000: Avg prompt throughput: 5700.8 tokens/s, Avg generation throughput: 95.3 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 38.2%, Prefix cache hit rate: 47.8%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:27:45 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6391332864, GPU_to_CPU_total_time=0.2915653462409973, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.00015529599785804748
+(APIServer pid=1029874) INFO:     127.0.0.1:45104 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:43908 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46982 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60820 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:27:55 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.7 tokens/s, Avg generation throughput: 130.1 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 30.6%, Prefix cache hit rate: 48.6%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:27:55 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4355260416, GPU_to_CPU_total_time=0.19870064082741734, CPU_to_GPU_total_bytes=2359296, CPU_to_GPU_total_time=0.0001499200016260147
+(APIServer pid=1029874) INFO:     127.0.0.1:43914 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:42176 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:46954 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:42210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:28:05 [loggers.py:259] Engine 000: Avg prompt throughput: 2851.9 tokens/s, Avg generation throughput: 130.5 tokens/s, Running: 5 reqs, Waiting: 0 reqs, GPU KV cache usage: 30.6%, Prefix cache hit rate: 49.1%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:28:05 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=4343463936, GPU_to_CPU_total_time=0.198064702577889
+(APIServer pid=1029874) INFO:     127.0.0.1:42190 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:43902 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:42528 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:42498 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:28:15 [loggers.py:259] Engine 000: Avg prompt throughput: 2851.1 tokens/s, Avg generation throughput: 101.6 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 33.9%, Prefix cache hit rate: 49.5%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:28:15 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=5192810496, GPU_to_CPU_total_time=0.23579308603703977, CPU_to_GPU_total_bytes=4718592, CPU_to_GPU_total_time=0.00029193599522113803
+(APIServer pid=1029874) INFO:     127.0.0.1:43920 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37710 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37730 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:28:25 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.6 tokens/s, Avg generation throughput: 88.0 tokens/s, Running: 6 reqs, Waiting: 0 reqs, GPU KV cache usage: 37.1%, Prefix cache hit rate: 49.9%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:28:25 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=6096420864, GPU_to_CPU_total_time=0.27781436769664286
+(APIServer pid=1029874) INFO:     127.0.0.1:42206 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37740 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60798 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:42512 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:60812 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:37722 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO 03-29 14:28:35 [loggers.py:259] Engine 000: Avg prompt throughput: 2852.7 tokens/s, Avg generation throughput: 174.9 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 15.4%, Prefix cache hit rate: 50.6%, External prefix cache hit rate: 0.0%
+(APIServer pid=1029874) INFO 03-29 14:28:35 [metrics.py:103] KV Transfer metrics: GPU_to_CPU_total_bytes=1639710720, GPU_to_CPU_total_time=0.07527942454814908
+(APIServer pid=1029874) INFO:     127.0.0.1:60782 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1029874) INFO:     127.0.0.1:33538 - "POST /v1/completions HTTP/1.1" 200 OK
+[decode] sample_id=tok16384_s004_g512 status=200 elapsed_ms=17529
+[decode] sample_id=tok16384_s007_g256 status=200 elapsed_ms=8782
+[decode] sample_id=tok16384_s008_g128 status=200 elapsed_ms=4576
+[decode] sample_id=tok16384_s005_g512 status=200 elapsed_ms=16114
+[decode] sample_id=tok16384_s008_g256 status=200 elapsed_ms=6906
+[decode] sample_id=tok16384_s009_g128 status=200 elapsed_ms=4550
+[decode] sample_id=tok16384_s006_g512 status=200 elapsed_ms=17049
+[decode] sample_id=tok16384_s009_g256 status=200 elapsed_ms=8152
+[decode] sample_id=tok16384_s010_g128 status=200 elapsed_ms=4597
+[decode] sample_id=tok16384_s007_g512 status=200 elapsed_ms=17413
+[decode] sample_id=tok16384_s010_g256 status=200 elapsed_ms=7177
+[decode] sample_id=tok16384_s011_g128 status=200 elapsed_ms=4590
+[decode] sample_id=tok16384_s008_g512 status=200 elapsed_ms=18880
+[decode] sample_id=tok24576_s000_g128 status=200 elapsed_ms=6239
+[decode] sample_id=tok16384_s011_g256 status=200 elapsed_ms=8608
+[decode] sample_id=tok16384_s009_g512 status=200 elapsed_ms=20634
+[decode] sample_id=tok24576_s000_g256 status=200 elapsed_ms=8985
+[decode] sample_id=tok24576_s001_g128 status=200 elapsed_ms=6499
+[decode] sample_id=tok16384_s010_g512 status=200 elapsed_ms=22345
+[decode] sample_id=tok24576_s002_g128 status=200 elapsed_ms=6521
+[decode] sample_id=tok24576_s001_g256 status=200 elapsed_ms=9148
+[decode] sample_id=tok16384_s011_g512 status=200 elapsed_ms=22396
+[decode] sample_id=tok24576_s002_g256 status=200 elapsed_ms=9333
+[decode] sample_id=tok24576_s003_g128 status=200 elapsed_ms=6649
+[decode] sample_id=tok24576_s000_g512 status=200 elapsed_ms=24868
+[decode] sample_id=tok24576_s003_g256 status=200 elapsed_ms=11439
+[decode] sample_id=tok24576_s004_g128 status=200 elapsed_ms=6776
+[decode] sample_id=tok24576_s001_g512 status=200 elapsed_ms=25592
+[decode] sample_id=tok24576_s004_g256 status=200 elapsed_ms=9601
+[decode] sample_id=tok24576_s005_g128 status=200 elapsed_ms=6758
+[decode] sample_id=tok24576_s002_g512 status=200 elapsed_ms=25624
+[decode] sample_id=tok24576_s006_g128 status=200 elapsed_ms=6751
+[decode] sample_id=tok24576_s005_g256 status=200 elapsed_ms=9558
+[decode] sample_id=tok24576_s003_g512 status=200 elapsed_ms=22740
+[decode] sample_id=tok24576_s006_g256 status=200 elapsed_ms=9438
+[decode] sample_id=tok24576_s007_g128 status=200 elapsed_ms=6692
+[decode] sample_id=tok24576_s004_g512 status=200 elapsed_ms=23415
+[decode] sample_id=tok24576_s007_g256 status=200 elapsed_ms=12484
+[decode] sample_id=tok24576_s008_g128 status=200 elapsed_ms=6703
+[decode] sample_id=tok24576_s005_g512 status=200 elapsed_ms=25519
+[decode] sample_id=tok24576_s008_g256 status=200 elapsed_ms=11712
+[decode] sample_id=tok24576_s009_g128 status=200 elapsed_ms=6701
+[decode] sample_id=tok24576_s006_g512 status=200 elapsed_ms=25489
+[decode] sample_id=tok24576_s009_g256 status=200 elapsed_ms=9522
+[decode] sample_id=tok24576_s010_g128 status=200 elapsed_ms=6782
+[decode] sample_id=tok24576_s007_g512 status=200 elapsed_ms=25580
+[decode] sample_id=tok24576_s010_g256 status=200 elapsed_ms=9605
+[decode] sample_id=tok24576_s011_g128 status=200 elapsed_ms=6787
+[decode] sample_id=tok24576_s008_g512 status=200 elapsed_ms=26477
+[decode] sample_id=tok28672_s000_g128 status=200 elapsed_ms=7704
+[decode] sample_id=tok24576_s011_g256 status=200 elapsed_ms=10501
+[decode] sample_id=tok24576_s009_g512 status=200 elapsed_ms=27429
+[decode] sample_id=tok28672_s000_g256 status=200 elapsed_ms=10688
+[decode] sample_id=tok28672_s001_g128 status=200 elapsed_ms=7875
+[decode] sample_id=tok24576_s010_g512 status=200 elapsed_ms=28576
+[decode] sample_id=tok28672_s001_g256 status=200 elapsed_ms=10881
+[decode] sample_id=tok28672_s002_g128 status=200 elapsed_ms=7903
+[decode] sample_id=tok24576_s011_g512 status=200 elapsed_ms=29674
+[decode] sample_id=tok28672_s002_g256 status=200 elapsed_ms=10840
+[decode] sample_id=tok28672_s003_g128 status=200 elapsed_ms=7846
+[decode] sample_id=tok28672_s000_g512 status=200 elapsed_ms=29867
+[decode] sample_id=tok28672_s003_g256 status=200 elapsed_ms=10859
+[decode] sample_id=tok28672_s004_g128 status=200 elapsed_ms=7995
+[decode] sample_id=tok28672_s001_g512 status=200 elapsed_ms=29897
+[decode] sample_id=tok28672_s005_g128 status=200 elapsed_ms=7860
+[decode] sample_id=tok28672_s004_g256 status=200 elapsed_ms=10834
+[decode] sample_id=tok28672_s002_g512 status=200 elapsed_ms=29930
+[decode] sample_id=tok28672_s006_g128 status=200 elapsed_ms=8010
+[decode] sample_id=tok28672_s005_g256 status=200 elapsed_ms=10955
+[decode] sample_id=tok28672_s003_g512 status=200 elapsed_ms=30082
+[decode] sample_id=tok28672_s006_g256 status=200 elapsed_ms=10919
+[decode] sample_id=tok28672_s007_g128 status=200 elapsed_ms=7907
+[decode] sample_id=tok28672_s004_g512 status=200 elapsed_ms=30445
+[decode] sample_id=tok28672_s008_g128 status=200 elapsed_ms=8044
+[decode] sample_id=tok28672_s007_g256 status=200 elapsed_ms=10991
+[decode] sample_id=tok28672_s005_g512 status=200 elapsed_ms=30278
+[decode] sample_id=tok28672_s009_g128 status=200 elapsed_ms=7924
+[decode] sample_id=tok28672_s008_g256 status=200 elapsed_ms=10932
+[decode] sample_id=tok28672_s006_g512 status=200 elapsed_ms=30184
+[decode] sample_id=tok28672_s009_g256 status=200 elapsed_ms=10961
+[decode] sample_id=tok28672_s010_g128 status=200 elapsed_ms=8032
+[decode] sample_id=tok28672_s007_g512 status=200 elapsed_ms=30285
+[decode] sample_id=tok28672_s010_g256 status=200 elapsed_ms=11027
+[decode] sample_id=tok28672_s011_g128 status=200 elapsed_ms=8009
+[decode] sample_id=tok28672_s008_g512 status=200 elapsed_ms=25908
+[decode] sample_id=tok28672_s011_g256 status=200 elapsed_ms=6044
+[decode] sample_id=tok28672_s009_g512 status=200 elapsed_ms=20950
+[decode] sample_id=tok28672_s010_g512 status=200 elapsed_ms=15273
+[decode] sample_id=tok28672_s011_g512 status=200 elapsed_ms=9295
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/decode_samples.csv
+217 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/data/decode_samples.csv
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pd_imitation_trace.csv
+wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pd_imitation_summary.json
+19 /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pd_imitation_trace.csv
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pcie_timeline.svg
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pcie_timeline_report.md
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pcie_timeline_window.csv
+[ok] wrote /home/danyang/SkyGDR/results/pd_imitation_qwen3_8b_instruct_native_offload/summary/pcie_timeline_summary.json
+/usr/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+scripts/run_pd_imitation_full.sh: line 41: 1029874 Killed                  vllm serve "$MODEL_PATH" --served-model-name "$SERVED_MODEL" --host 127.0.0.1 --port "$PORT" --dtype bfloat16 --max-model-len 32768 --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" --max-num-seqs "$MAX_NUM_SEQS" --generation-config vllm --kv-offloading-size "$OFFLOAD_SIZE_GIB" --kv-offloading-backend native --disable-hybrid-kv-cache-manager 2>&1
+     1029875 Done                    | tee "$RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log"
+========== COMPARE REPORT ==========
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/summary/prefill_aggregate.csv
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/summary/decode_aggregate.csv
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/fig/prefill_latency.svg
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/fig/prefill_throughput.svg
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/fig/decode_ms_per_token.svg
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/fig/kv_footprint_gib.svg
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/summary/pd_imitation_report.md
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/fig/compare_prefill_latency.svg
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/fig/compare_decode_g512_mspt.svg
+[ok] wrote results/pd_imitation_qwen3_8b_instruct/summary/pd_imitation_compare_report.md
+DONE. Log: results/pd_imitation_full_run_6x6_i100ms_v2.log
