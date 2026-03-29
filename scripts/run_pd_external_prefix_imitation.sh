@@ -26,6 +26,9 @@ export SLEEP_BETWEEN_REQUESTS_MS="${SLEEP_BETWEEN_REQUESTS_MS:-250}"
 
 export LMCACHE_CHUNK_SIZE="${LMCACHE_CHUNK_SIZE:-256}"
 export LMCACHE_LOCAL_CPU="${LMCACHE_LOCAL_CPU:-false}"
+# Official mock example uses max_local_cpu_size: 10 even with local_cpu: false; 0 can leave
+# no LocalCPUBackend and break RemoteBackendHealthCheck (LMCache stays "unhealthy").
+export LMCACHE_MAX_LOCAL_CPU_SIZE="${LMCACHE_MAX_LOCAL_CPU_SIZE:-10}"
 export LMCACHE_REMOTE_URL="${LMCACHE_REMOTE_URL:-}"
 export MOCK_STORAGE_GB="${MOCK_STORAGE_GB:-256}"
 export MOCK_PEEKING_LATENCY_MS="${MOCK_PEEKING_LATENCY_MS:-1}"
@@ -95,7 +98,7 @@ EOF
 cat > "$RUN_ROOT/data/lmcache_config.yaml" <<EOF
 chunk_size: ${LMCACHE_CHUNK_SIZE}
 local_cpu: ${LMCACHE_LOCAL_CPU}
-max_local_cpu_size: 0
+max_local_cpu_size: ${LMCACHE_MAX_LOCAL_CPU_SIZE}
 remote_url: "${LMCACHE_REMOTE_URL}"
 remote_serde: "naive"
 save_decode_cache: false
@@ -122,7 +125,6 @@ vllm serve "$MODEL_PATH" \
   --generation-config vllm \
   --no-enable-prefix-caching \
   --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}' \
-  --disable-log-requests \
   2>&1 | tee "$RUN_ROOT/logs/vllm_external_prefix.log" &
 wait_health
 trap 'stop_metrics_logger; stop_all_vllm' EXIT

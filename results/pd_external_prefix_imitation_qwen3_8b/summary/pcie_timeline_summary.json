@@ -1,0 +1,105 @@
+{
+  "run_label": "pd_external_prefix_imitation_qwen3_8b",
+  "windows": {
+    "window_start_unix_ms": 1774778627167,
+    "window_end_unix_ms": 1774778642691
+  },
+  "full": {
+    "duration_s": 15.524,
+    "num_samples": 362,
+    "tx_total_GiB": 7.549189999999999,
+    "rx_total_GiB": 20.835673,
+    "total_transfer_GiB": 28.384862000000002,
+    "avg_tx_GiB_s": 0.4862915485699562,
+    "avg_rx_GiB_s": 1.342158786395259,
+    "avg_total_GiB_s": 1.828450270548828,
+    "peak_tx_GiB_s": 15.451899,
+    "peak_rx_GiB_s": 35.758922,
+    "peak_total_GiB_s": 39.132172,
+    "peak_tx_t_ms": 3128,
+    "peak_rx_t_ms": 13925,
+    "peak_total_t_ms": 13925,
+    "link_ref_GiB_s": 29.340386
+  },
+  "phases": {
+    "seed": {
+      "duration_s": 4.621,
+      "num_samples": 106,
+      "tx_total_GiB": 5.0435419999999995,
+      "rx_total_GiB": 0.035742,
+      "total_transfer_GiB": 5.0792839999999995,
+      "avg_tx_GiB_s": 1.0914395152564378,
+      "avg_rx_GiB_s": 0.007734689461155594,
+      "avg_total_GiB_s": 1.0991742047175934,
+      "peak_tx_GiB_s": 15.451899,
+      "peak_rx_GiB_s": 0.048755,
+      "peak_total_GiB_s": 15.468475,
+      "peak_tx_t_ms": 3128,
+      "peak_rx_t_ms": 634,
+      "peak_total_t_ms": 3128,
+      "link_ref_GiB_s": 29.340386
+    },
+    "reuse": {
+      "duration_s": 9.566,
+      "num_samples": 223,
+      "tx_total_GiB": 2.505046,
+      "rx_total_GiB": 20.799513,
+      "total_transfer_GiB": 23.304558000000004,
+      "avg_tx_GiB_s": 0.2618697470206983,
+      "avg_rx_GiB_s": 2.174316642274723,
+      "avg_total_GiB_s": 2.43618628475852,
+      "peak_tx_GiB_s": 4.122732,
+      "peak_rx_GiB_s": 35.758922,
+      "peak_total_GiB_s": 39.132172,
+      "peak_tx_t_ms": 6875,
+      "peak_rx_t_ms": 9046,
+      "peak_total_t_ms": 9046,
+      "link_ref_GiB_s": 29.340386
+    }
+  },
+  "requests": [
+    {
+      "request_id": "turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1774778627167,
+      "end_unix_ms": 1774778631788
+    },
+    {
+      "request_id": "turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1774778632046,
+      "end_unix_ms": 1774778633936
+    },
+    {
+      "request_id": "turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1774778634201,
+      "end_unix_ms": 1774778636106
+    },
+    {
+      "request_id": "turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1774778636371,
+      "end_unix_ms": 1774778638294
+    },
+    {
+      "request_id": "turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1774778638568,
+      "end_unix_ms": 1774778640493
+    },
+    {
+      "request_id": "turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1774778640768,
+      "end_unix_ms": 1774778642691
+    }
+  ],
+  "request_summary_csv": "/home/danyang/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/request_pcie_summary.csv"
+}

@@ -96,7 +96,7 @@
 
 - `chunk_size: 256`
 - `local_cpu: false`
-- `max_local_cpu_size: 0`
+- `max_local_cpu_size: 10`（与 [LMCache Mock 官方示例](https://docs.lmcache.ai/kv_cache/storage_backends/mock.html) 一致；设为 `0` 可能导致无 Local CPU backend，远程后端健康检查失败，整站表现为 `LMCache is unhealthy`）
 - `remote_serde: "naive"`
 - `save_decode_cache: false`
 - `save_unfull_chunk: false`
@@ -107,7 +107,7 @@
   - 让每轮追加也按 `256` token 对齐
   - 最大化可复用 chunk 的比例
 - `local_cpu=false`
-  - 避免 LMCache 本地 CPU cache 把 external backend 命中遮住
+  - 关闭「本地 CPU 热缓存」语义上的优先使用；`max_local_cpu_size` 仍保留小容量以符合官方 mock 配置并让健康检查能分配测试缓冲区
 - `save_decode_cache=false`
   - 不把重点放在 decode 生成出来的 KV
   - 让实验更聚焦于 prompt/prefix 复用

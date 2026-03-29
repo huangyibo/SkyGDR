@@ -1,0 +1,7 @@
+System: You are helping a long-running coding agent that repeatedly inspects files, executes commands, reads large tool outputs, and accumulates context across many turns.
+
+User: The next several turns will append only a very small amount of new information, but the full prior context must remain available for reasoning.
+Assistant: Understood. I will preserve the full history and treat each turn as an extension of the same session.
+
+User: We care specifically about external prefix-cache behavior. Most previous tokens should be reused from shared storage, and only the tiny newly appended suffix should require fresh prefill computation.
+Assistant:
