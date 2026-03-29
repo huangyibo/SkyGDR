@@ -27,6 +27,11 @@ import time
 
 import pynvml
 
+try:
+    import psutil
+except Exception:
+    psutil = None
+
 
 def safe_call(fn, default=None):
     try:
@@ -134,8 +139,8 @@ def plot_csv(csv_path: str, out_path: str = None, show: bool = False, title: str
     else:
         t_s = [float(x) for x in ts_ms]
 
-    fig, axes = plt.subplots(3, 1, sharex=True, figsize=(12, 8))
-    ax_pcie, ax_util, ax_clk = axes
+    fig, axes = plt.subplots(4, 1, sharex=True, figsize=(12, 10))
+    ax_pcie, ax_cum, ax_util, ax_clk = axes
 
     # --- PCIe subplot ---
     pcie_plotted = False
@@ -163,6 +168,10 @@ def plot_csv(csv_path: str, out_path: str = None, show: bool = False, title: str
         ax_pcie.plot(t_s, rx_GiB_s, label="pcie_rx_GiB_s")
         pcie_plotted = True
 
+    if "pcie_total_GiB_s" in data:
+        ax_pcie.plot(t_s, data["pcie_total_GiB_s"], label="pcie_total_GiB_s", linewidth=2.0)
+        pcie_plotted = True
+
     ax_pcie.set_ylabel("PCIe GiB/s")
     ax_pcie.grid(True, alpha=0.3)
 
@@ -188,6 +197,24 @@ def plot_csv(csv_path: str, out_path: str = None, show: bool = False, title: str
     else:
         ax_pcie.set_visible(False)
 
+    # --- cumulative PCIe volume subplot ---
+    cum_plotted = False
+    if "pcie_tx_cum_GiB" in data:
+        ax_cum.plot(t_s, data["pcie_tx_cum_GiB"], label="pcie_tx_cum_GiB")
+        cum_plotted = True
+    if "pcie_rx_cum_GiB" in data:
+        ax_cum.plot(t_s, data["pcie_rx_cum_GiB"], label="pcie_rx_cum_GiB")
+        cum_plotted = True
+    if "pcie_total_cum_GiB" in data:
+        ax_cum.plot(t_s, data["pcie_total_cum_GiB"], label="pcie_total_cum_GiB", linewidth=2.0)
+        cum_plotted = True
+    ax_cum.set_ylabel("PCIe cum GiB")
+    ax_cum.grid(True, alpha=0.3)
+    if cum_plotted:
+        ax_cum.legend(loc="upper left")
+    else:
+        ax_cum.set_visible(False)
+
     # --- GPU utilization subplot ---
     util_plotted = False
     if "util_gpu_pct" in data:
@@ -196,10 +223,25 @@ def plot_csv(csv_path: str, out_path: str = None, show: bool = False, title: str
     if "util_mem_pct" in data:
         ax_util.plot(t_s, data["util_mem_pct"], label="util_mem_pct")
         util_plotted = True
+    if "gpu_mem_used_GiB" in data:
+        ax_util_r = ax_util.twinx()
+        ax_util_r.plot(t_s, data["gpu_mem_used_GiB"], "--", label="gpu_mem_used_GiB", alpha=0.7)
+        ax_util_r.set_ylabel("GPU mem GiB")
+        util_plotted = True
+    else:
+        ax_util_r = None
+    if "cpu_util_pct" in data:
+        ax_util.plot(t_s, data["cpu_util_pct"], label="cpu_util_pct", alpha=0.7)
+        util_plotted = True
     ax_util.set_ylabel("Util %")
     ax_util.grid(True, alpha=0.3)
     if util_plotted:
-        ax_util.legend(loc="upper right")
+        handles, labels = ax_util.get_legend_handles_labels()
+        if ax_util_r:
+            h2, l2 = ax_util_r.get_legend_handles_labels()
+            handles += h2
+            labels += l2
+        ax_util.legend(handles, labels, loc="upper right")
     else:
         ax_util.set_visible(False)
 
@@ -297,9 +339,15 @@ def main():
     # Record both unix time and relative time so cross-process correlation stays robust.
     header = (
         "ts_unix_ms,t_ms,"
-        "pcie_tx_GiB_s,pcie_rx_GiB_s,"
-        "pcie_tx_util_pct,pcie_rx_util_pct,"
-        "pcie_tx_peak_util_pct,pcie_rx_peak_util_pct"
+        "pcie_link_gen,pcie_link_width,pcie_link_ref_GiB_s,"
+        "pcie_tx_GiB_s,pcie_rx_GiB_s,pcie_total_GiB_s,"
+        "pcie_tx_util_pct,pcie_rx_util_pct,pcie_total_util_pct,"
+        "pcie_tx_peak_util_pct,pcie_rx_peak_util_pct,pcie_total_peak_util_pct,"
+        "pcie_tx_cum_GiB,pcie_rx_cum_GiB,pcie_total_cum_GiB,"
+        "util_gpu_pct,util_mem_pct,"
+        "gpu_mem_used_GiB,gpu_mem_total_GiB,gpu_mem_used_pct,"
+        "sm_clock_mhz,mem_clock_mhz,power_w,"
+        "cpu_util_pct,cpu_mem_used_GiB,cpu_mem_avail_GiB,cpu_mem_used_pct"
     )
 
     if out_fp is not sys.stdout:
@@ -339,6 +387,10 @@ def main():
 
     tx_peak_pct = 0.0
     rx_peak_pct = 0.0
+    total_peak_pct = 0.0
+    tx_cum_gib = 0.0
+    rx_cum_gib = 0.0
+    last_sample_t = None
 
     try:
         while True:
@@ -359,24 +411,71 @@ def main():
 
             tx_GiB_s = kib_s_to_GiB_s(pcie_tx_kib_s) if pcie_tx_kib_s is not None and pcie_tx_kib_s >= 0 else -1.0
             rx_GiB_s = kib_s_to_GiB_s(pcie_rx_kib_s) if pcie_rx_kib_s is not None and pcie_rx_kib_s >= 0 else -1.0
+            total_GiB_s = (tx_GiB_s + rx_GiB_s) if (tx_GiB_s >= 0 and rx_GiB_s >= 0) else -1.0
 
             tx_pct = (100.0 * tx_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and tx_GiB_s >= 0) else -1.0
             rx_pct = (100.0 * rx_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and rx_GiB_s >= 0) else -1.0
+            total_pct = (100.0 * total_GiB_s / link_ref_GiB_s) if (link_ref_GiB_s > 0 and total_GiB_s >= 0) else -1.0
             if tx_pct >= 0:
                 tx_pct = min(tx_pct, 100.0)
             if rx_pct >= 0:
                 rx_pct = min(rx_pct, 100.0)
+            if total_pct >= 0:
+                total_pct = min(total_pct, 200.0)
 
             if tx_pct >= 0:
                 tx_peak_pct = max(tx_peak_pct, tx_pct)
             if rx_pct >= 0:
                 rx_peak_pct = max(rx_peak_pct, rx_pct)
+            if total_pct >= 0:
+                total_peak_pct = max(total_peak_pct, total_pct)
+
+            now_mono = time.monotonic()
+            dt_s = 0.0 if last_sample_t is None else max(0.0, now_mono - last_sample_t)
+            last_sample_t = now_mono
+            if dt_s > 0.0:
+                if tx_GiB_s >= 0:
+                    tx_cum_gib += tx_GiB_s * dt_s
+                if rx_GiB_s >= 0:
+                    rx_cum_gib += rx_GiB_s * dt_s
+            total_cum_gib = tx_cum_gib + rx_cum_gib
+
+            util = safe_call(lambda: pynvml.nvmlDeviceGetUtilizationRates(handle), None)
+            mem = safe_call(lambda: pynvml.nvmlDeviceGetMemoryInfo(handle), None)
+            sm_clock = safe_call(lambda: pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_SM), -1)
+            mem_clock = safe_call(lambda: pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM), -1)
+            power_mw = safe_call(lambda: pynvml.nvmlDeviceGetPowerUsage(handle), -1)
+
+            util_gpu_pct = float(getattr(util, "gpu", -1))
+            util_mem_pct = float(getattr(util, "memory", -1))
+            gpu_mem_used_gib = (float(mem.used) / (1024.0 ** 3)) if mem else -1.0
+            gpu_mem_total_gib = (float(mem.total) / (1024.0 ** 3)) if mem else -1.0
+            gpu_mem_used_pct = (100.0 * gpu_mem_used_gib / gpu_mem_total_gib) if gpu_mem_total_gib > 0 else -1.0
+            power_w = (power_mw / 1000.0) if power_mw is not None and power_mw >= 0 else -1.0
+
+            if psutil is not None:
+                cpu_util_pct = float(psutil.cpu_percent(interval=None))
+                vm = psutil.virtual_memory()
+                cpu_mem_used_gib = float(vm.used) / (1024.0 ** 3)
+                cpu_mem_avail_gib = float(vm.available) / (1024.0 ** 3)
+                cpu_mem_used_pct = float(vm.percent)
+            else:
+                cpu_util_pct = -1.0
+                cpu_mem_used_gib = -1.0
+                cpu_mem_avail_gib = -1.0
+                cpu_mem_used_pct = -1.0
 
             out_fp.write(
                 f"{ts_unix_ms},{t_ms},"
-                f"{tx_GiB_s:.6f},{rx_GiB_s:.6f},"
-                f"{tx_pct:.3f},{rx_pct:.3f},"
-                f"{tx_peak_pct:.3f},{rx_peak_pct:.3f}\n"
+                f"{curr_gen},{curr_wid},{link_ref_GiB_s:.6f},"
+                f"{tx_GiB_s:.6f},{rx_GiB_s:.6f},{total_GiB_s:.6f},"
+                f"{tx_pct:.3f},{rx_pct:.3f},{total_pct:.3f},"
+                f"{tx_peak_pct:.3f},{rx_peak_pct:.3f},{total_peak_pct:.3f},"
+                f"{tx_cum_gib:.6f},{rx_cum_gib:.6f},{total_cum_gib:.6f},"
+                f"{util_gpu_pct:.3f},{util_mem_pct:.3f},"
+                f"{gpu_mem_used_gib:.6f},{gpu_mem_total_gib:.6f},{gpu_mem_used_pct:.3f},"
+                f"{float(sm_clock):.3f},{float(mem_clock):.3f},{power_w:.3f},"
+                f"{cpu_util_pct:.3f},{cpu_mem_used_gib:.6f},{cpu_mem_avail_gib:.6f},{cpu_mem_used_pct:.3f}\n"
             )
             try:
                 out_fp.flush()
@@ -389,7 +488,9 @@ def main():
                     print(
                         f"[pcie] t={t_ms / 1000.0:.3f}s "
                         f"tx={tx_GiB_s:.3f}GiB/s ({tx_pct:.2f}% of max, peak {tx_peak_pct:.2f}%) "
-                        f"rx={rx_GiB_s:.3f}GiB/s ({rx_pct:.2f}% of max, peak {rx_peak_pct:.2f}%)",
+                        f"rx={rx_GiB_s:.3f}GiB/s ({rx_pct:.2f}% of max, peak {rx_peak_pct:.2f}%) "
+                        f"total={total_GiB_s:.3f}GiB/s (peak {total_peak_pct:.2f}% of one-dir max) "
+                        f"cum={total_cum_gib:.3f}GiB",
                         file=sys.stderr,
                     )
                 else:

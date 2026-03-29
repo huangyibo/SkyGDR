@@ -95,6 +95,20 @@ KV_bytes_per_token = 2 × 36 × 8 × 128 × 2 = 147456 bytes
 - 对 native CPU KV offloading 来说，想观察更明显的 CPU-GPU KV 搬运，仅靠单条串行请求通常不够
 - 这里用“更长的上下文 + 更长的生成 + 受控并发”来放大两者差异
 
+如果你的目标是“尽量把 CPU-GPU 传输打大”，更应该优先调的是：
+
+- `MAX_NUM_SEQS`
+- `PARALLEL_REQUESTS`
+- 更长的 context / generation
+
+而不是只把 `OFFLOAD_SIZE_GIB` 一味调大。
+
+原因是：
+
+- `OFFLOAD_SIZE_GIB` 主要决定 CPU 侧能装下多少 offloaded KV
+- 它本身不会自动制造更多 PCIe 传输
+- 真正决定传输压力的，是当前活跃工作集大小和请求重叠程度
+
 ## 2. 为什么第 1 阶段不需要 LMCache
 
 如果你当前不跑真正的 PD 分离 offloading，那么第 1 阶段并不需要 LMCache。
@@ -166,6 +180,12 @@ export UV_CACHE_DIR=$DATA_ROOT/uv-cache
 export TMPDIR=$DATA_ROOT/tmp
 export HF_HOME=$DATA_ROOT/hf-cache
 export HUGGINGFACE_HUB_CACHE=$HF_HOME/hub
+export GPU_INDEX=0
+export GPU_METRICS_INTERVAL_MS=100
+export MAX_NUM_SEQS=4
+export PARALLEL_REQUESTS=4
+export OFFLOAD_SIZE_GIB=32
+export GPU_MEMORY_UTILIZATION=0.85
 
 mkdir -p $DATA_ROOT/{uv-cache,tmp,venvs,hf-cache}
 mkdir -p $BASELINE_RUN_ROOT/{logs,data,summary}
@@ -187,6 +207,19 @@ cd $ROOT
 - 默认 `RUN_ROOT=$BASELINE_RUN_ROOT`
 - baseline 和 offloading 一定要落到两个不同目录
 - 否则后面生成对照图和对照报告时会把两轮数据混在一起
+
+这里新增的这些环境变量用于“直接观测 PCIe / CPU-GPU 传输”：
+
+- `GPU_METRICS_INTERVAL_MS`
+  - `gpu_metrics_logger.py` 的采样周期
+- `MAX_NUM_SEQS`
+  - 服务端活跃序列数上限
+- `PARALLEL_REQUESTS`
+  - 客户端并发请求数
+- `OFFLOAD_SIZE_GIB`
+  - CPU 侧 offload buffer 容量
+- `GPU_MEMORY_UTILIZATION`
+  - 服务端显存利用率上限
 
 ## 5. 一次性环境准备
 
@@ -265,8 +298,8 @@ vllm serve $MODEL_PATH \
   --port $PORT \
   --dtype bfloat16 \
   --max-model-len 32768 \
-  --gpu-memory-utilization 0.85 \
-  --max-num-seqs 4 \
+  --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
+  --max-num-seqs $MAX_NUM_SEQS \
   --generation-config vllm \
   2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct.log
 ```
@@ -428,11 +461,11 @@ python3 src/tools/pd_collect_openai_samples.py \
   --mode prefill \
   --input_jsonl $RUN_ROOT/data/prefill_prompts.jsonl \
   --endpoint completion \
-  --parallel_requests 4 \
+  --parallel_requests $PARALLEL_REQUESTS \
   --out_csv $RUN_ROOT/data/prefill_samples.csv
 ```
 
-这里的 `--parallel_requests 4` 很重要：
+这里的 `--parallel_requests $PARALLEL_REQUESTS` 很重要：
 
 - 它会同时发出 4 条请求
 - 对 baseline 和 offloading 都使用同样的并发
@@ -536,7 +569,7 @@ python3 src/tools/pd_collect_openai_samples.py \
   --input_jsonl $RUN_ROOT/data/decode_prompts.jsonl \
   --generated_tokens 128,256,512 \
   --endpoint completion \
-  --parallel_requests 4 \
+  --parallel_requests $PARALLEL_REQUESTS \
   --out_csv $RUN_ROOT/data/decode_samples.csv
 ```
 
@@ -635,10 +668,10 @@ vllm serve $MODEL_PATH \
   --port $PORT \
   --dtype bfloat16 \
   --max-model-len 32768 \
-  --gpu-memory-utilization 0.85 \
-  --max-num-seqs 4 \
+  --gpu-memory-utilization $GPU_MEMORY_UTILIZATION \
+  --max-num-seqs $MAX_NUM_SEQS \
   --generation-config vllm \
-  --kv-offloading-size 32 \
+  --kv-offloading-size $OFFLOAD_SIZE_GIB \
   --kv-offloading-backend native \
   --disable-hybrid-kv-cache-manager \
   2>&1 | tee $RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log
@@ -646,8 +679,8 @@ vllm serve $MODEL_PATH \
 
 ### 13.3 这意味着什么
 
-- `--kv-offloading-size 32`
-  - 给 CPU 侧 KV offloading buffer 分配 `32 GiB`
+- `--kv-offloading-size $OFFLOAD_SIZE_GIB`
+  - 给 CPU 侧 KV offloading buffer 分配对应大小的 CPU 内存
   - 这不是 vLLM 官方给出的统一推荐值，而是为了更容易观察 offloading 效果而选的“更激进”的实验值
   - 对当前 `Qwen3-8B` + 长上下文 workload，这个值更容易让 CPU-GPU 间的 KV 搬运变得可观
 - `--kv-offloading-backend native`
@@ -706,6 +739,76 @@ python3 src/tools/pd_imitation_report.py \
 
 - baseline 和 native CPU offloading 的 prefill latency 是否出现分叉
 - 当前最大 generation bucket（本手册为 `g=512`）这个更接近 steady-state 的 decode proxy 在不同 context 下是否明显变差
+
+### 13.6 直接观测 PCIe / CPU-GPU 传输
+
+如果你想更直接地看到 offloading 期间的 CPU-GPU 传输，而不是只看请求级 latency，这一版还配套了：
+
+- `src/tools/gpu_metrics_logger.py`
+- `src/tools/pd_pcie_offload_analyze.py`
+
+新版脚本现在会自动生成：
+
+- `$RUN_ROOT/logs/gpu_metrics.csv`
+  - 原始 GPU PCIe 时序
+- `$RUN_ROOT/summary/pcie_timeline_window.csv`
+  - 按请求窗口裁剪后的时序
+- `$RUN_ROOT/summary/pcie_timeline_summary.json`
+  - 全窗口 / prefill / decode 的总量与峰值统计
+- `$RUN_ROOT/summary/pcie_timeline_report.md`
+  - 文字版总结
+- `$RUN_ROOT/summary/pcie_timeline.svg`
+  - 带宽随时间变化图
+
+这些文件主要回答：
+
+- 从 offloading workload 开始到最后一个 decode/restore 结束，总共发生了多少 CPU-GPU PCIe 传输
+- 这段时间内 `tx` / `rx` / `tx+rx` 的带宽如何变化
+- prefill 和 decode 两个阶段分别贡献了多少传输总量
+
+最推荐先看的两个指标是：
+
+- `pcie_total_GiB_s`
+  - 双向总带宽，最稳妥
+- `pcie_total_cum_GiB`
+  - 双向累计总量
+
+如果你特别关心“restore 是否很重”，再进一步看：
+
+- `pcie_rx_GiB_s`
+
+在很多平台上，host -> GPU 的 restore 更容易体现在 GPU 侧 `RX`，但方向解释最好结合实测一起判断。
+
+### 13.7 如果你想把传输打得更大
+
+如果你发现 `pcie_timeline_report.md` 里的总量和峰值还是不够大，建议按这个顺序逐步加压：
+
+1. 先把 `MAX_NUM_SEQS` 和 `PARALLEL_REQUESTS` 从 `4` 提到 `6`
+2. 如果稳定，再一起提到 `8`
+3. 保持最长的 context / generation buckets，不要退回短 prompt
+4. baseline 和 offloading 必须保持同一组参数
+
+推荐写法：
+
+```bash
+export MAX_NUM_SEQS=6
+export PARALLEL_REQUESTS=6
+export GPU_METRICS_INTERVAL_MS=100
+```
+
+如果这组依旧稳定，再试：
+
+```bash
+export MAX_NUM_SEQS=8
+export PARALLEL_REQUESTS=8
+export GPU_METRICS_INTERVAL_MS=50
+```
+
+更稳妥的经验是：
+
+- 先加并发和活跃序列数
+- 再观察 `pcie_total_GiB_s` 和 `pcie_total_cum_GiB` 是否明显上涨
+- `OFFLOAD_SIZE_GIB` 只需要“足够装下 offloaded KV”，不要把它误当成直接放大带宽的主旋钮
 
 ## 14. 最低验收标准
 

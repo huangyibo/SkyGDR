@@ -16,6 +16,12 @@ export SERVED_MODEL="${SERVED_MODEL:-Qwen3-8B-Instruct}"
 export API_BASE="${API_BASE:-http://127.0.0.1:8000}"
 export PORT="${PORT:-8000}"
 export RUN_ROOT="$OFFLOAD_RUN_ROOT"
+export GPU_INDEX="${GPU_INDEX:-0}"
+export GPU_METRICS_INTERVAL_MS="${GPU_METRICS_INTERVAL_MS:-100}"
+export MAX_NUM_SEQS="${MAX_NUM_SEQS:-4}"
+export PARALLEL_REQUESTS="${PARALLEL_REQUESTS:-4}"
+export OFFLOAD_SIZE_GIB="${OFFLOAD_SIZE_GIB:-32}"
+export GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
 
 mkdir -p "$OFFLOAD_RUN_ROOT"/{logs,data,summary}
 
@@ -40,6 +46,26 @@ wait_health() {
   echo "health ok"
 }
 
+METRICS_PID=""
+
+start_metrics_logger() {
+  python3 src/tools/gpu_metrics_logger.py \
+    --gpu "$GPU_INDEX" \
+    --interval_ms "$GPU_METRICS_INTERVAL_MS" \
+    --out "$RUN_ROOT/logs/gpu_metrics.csv" \
+    >/dev/null 2>&1 &
+  METRICS_PID=$!
+  sleep 1
+}
+
+stop_metrics_logger() {
+  if [[ -n "${METRICS_PID:-}" ]]; then
+    kill "$METRICS_PID" >/dev/null 2>&1 || true
+    wait "$METRICS_PID" >/dev/null 2>&1 || true
+    METRICS_PID=""
+  fi
+}
+
 echo "========== OFFLOAD ONLY: clean GPU =========="
 stop_all_vllm
 
@@ -50,17 +76,18 @@ vllm serve "$MODEL_PATH" \
   --port "$PORT" \
   --dtype bfloat16 \
   --max-model-len 32768 \
-  --gpu-memory-utilization 0.85 \
-  --max-num-seqs 4 \
+  --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
+  --max-num-seqs "$MAX_NUM_SEQS" \
   --generation-config vllm \
-  --kv-offloading-size 32 \
+  --kv-offloading-size "$OFFLOAD_SIZE_GIB" \
   --kv-offloading-backend native \
   --disable-hybrid-kv-cache-manager \
   2>&1 | tee "$RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log" &
 wait_health
-trap 'stop_all_vllm' EXIT
+trap 'stop_metrics_logger; stop_all_vllm' EXIT
 
 echo "========== OFFLOAD PIPELINE =========="
+start_metrics_logger
 # shellcheck source=run_pd_imitation_full.sh
 # Inline same steps as pipeline_for_run_root in run_pd_imitation_full.sh
 cat > "$RUN_ROOT/data/long_dialogue_prefix.txt" <<'EOF'
@@ -92,7 +119,7 @@ python3 src/tools/pd_collect_openai_samples.py \
   --mode prefill \
   --input_jsonl "$RUN_ROOT/data/prefill_prompts.jsonl" \
   --endpoint completion \
-  --parallel_requests 4 \
+  --parallel_requests "$PARALLEL_REQUESTS" \
   --out_csv "$RUN_ROOT/data/prefill_samples.csv"
 
 python3 src/tools/pd_build_bucket_prompts.py \
@@ -109,7 +136,7 @@ python3 src/tools/pd_collect_openai_samples.py \
   --input_jsonl "$RUN_ROOT/data/decode_prompts.jsonl" \
   --generated_tokens 128,256,512 \
   --endpoint completion \
-  --parallel_requests 4 \
+  --parallel_requests "$PARALLEL_REQUESTS" \
   --out_csv "$RUN_ROOT/data/decode_samples.csv"
 
 python3 src/tools/pd_imitation_trace.py \
@@ -122,6 +149,18 @@ python3 src/tools/pd_imitation_trace.py \
   --chunk_size_tokens 256 \
   --out_csv "$RUN_ROOT/summary/pd_imitation_trace.csv" \
   --summary_out "$RUN_ROOT/summary/pd_imitation_summary.json"
+
+stop_metrics_logger
+
+python3 src/tools/pd_pcie_offload_analyze.py \
+  --metrics_csv "$RUN_ROOT/logs/gpu_metrics.csv" \
+  --prefill_csv "$RUN_ROOT/data/prefill_samples.csv" \
+  --decode_csv "$RUN_ROOT/data/decode_samples.csv" \
+  --run_label "$(basename "$RUN_ROOT")" \
+  --out_svg "$RUN_ROOT/summary/pcie_timeline.svg" \
+  --out_md "$RUN_ROOT/summary/pcie_timeline_report.md" \
+  --out_csv "$RUN_ROOT/summary/pcie_timeline_window.csv" \
+  --out_json "$RUN_ROOT/summary/pcie_timeline_summary.json"
 
 stop_all_vllm
 trap - EXIT

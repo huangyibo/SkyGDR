@@ -13,6 +13,12 @@ export API_BASE="${API_BASE:-http://127.0.0.1:8000}"
 export PORT="${PORT:-8000}"
 export DATA_ROOT="${DATA_ROOT:-/data/danyang}"
 export VENV_PATH="${VENV_PATH:-$DATA_ROOT/venvs/vllm}"
+export GPU_INDEX="${GPU_INDEX:-0}"
+export GPU_METRICS_INTERVAL_MS="${GPU_METRICS_INTERVAL_MS:-100}"
+export MAX_NUM_SEQS="${MAX_NUM_SEQS:-4}"
+export PARALLEL_REQUESTS="${PARALLEL_REQUESTS:-4}"
+export OFFLOAD_SIZE_GIB="${OFFLOAD_SIZE_GIB:-32}"
+export GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
 
 mkdir -p "$BASELINE_RUN_ROOT"/{logs,data,summary,fig}
 mkdir -p "$OFFLOAD_RUN_ROOT"/{logs,data,summary}
@@ -44,6 +50,40 @@ stop_port() {
   stop_all_vllm
 }
 
+METRICS_PID=""
+
+start_metrics_logger() {
+  local run_root="$1"
+  python3 src/tools/gpu_metrics_logger.py \
+    --gpu "$GPU_INDEX" \
+    --interval_ms "$GPU_METRICS_INTERVAL_MS" \
+    --out "$run_root/logs/gpu_metrics.csv" \
+    >/dev/null 2>&1 &
+  METRICS_PID=$!
+  sleep 1
+}
+
+stop_metrics_logger() {
+  if [[ -n "${METRICS_PID:-}" ]]; then
+    kill "$METRICS_PID" >/dev/null 2>&1 || true
+    wait "$METRICS_PID" >/dev/null 2>&1 || true
+    METRICS_PID=""
+  fi
+}
+
+analyze_metrics_for_run_root() {
+  local run_root="$1"
+  python3 src/tools/pd_pcie_offload_analyze.py \
+    --metrics_csv "$run_root/logs/gpu_metrics.csv" \
+    --prefill_csv "$run_root/data/prefill_samples.csv" \
+    --decode_csv "$run_root/data/decode_samples.csv" \
+    --run_label "$(basename "$run_root")" \
+    --out_svg "$run_root/summary/pcie_timeline.svg" \
+    --out_md "$run_root/summary/pcie_timeline_report.md" \
+    --out_csv "$run_root/summary/pcie_timeline_window.csv" \
+    --out_json "$run_root/summary/pcie_timeline_summary.json"
+}
+
 run_baseline_server() {
   export RUN_ROOT="$BASELINE_RUN_ROOT"
   stop_port
@@ -53,8 +93,8 @@ run_baseline_server() {
     --port "$PORT" \
     --dtype bfloat16 \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.85 \
-    --max-num-seqs 4 \
+    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
+    --max-num-seqs "$MAX_NUM_SEQS" \
     --generation-config vllm \
     2>&1 | tee "$RUN_ROOT/logs/vllm_qwen3_8b_instruct.log" &
   wait_health
@@ -69,10 +109,10 @@ run_offload_server() {
     --port "$PORT" \
     --dtype bfloat16 \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.85 \
-    --max-num-seqs 4 \
+    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
+    --max-num-seqs "$MAX_NUM_SEQS" \
     --generation-config vllm \
-    --kv-offloading-size 32 \
+    --kv-offloading-size "$OFFLOAD_SIZE_GIB" \
     --kv-offloading-backend native \
     --disable-hybrid-kv-cache-manager \
     2>&1 | tee "$RUN_ROOT/logs/vllm_qwen3_8b_instruct_native_kv_offload.log" &
@@ -118,7 +158,7 @@ EOF
     --mode prefill \
     --input_jsonl "$RUN_ROOT/data/prefill_prompts.jsonl" \
     --endpoint completion \
-    --parallel_requests 4 \
+    --parallel_requests "$PARALLEL_REQUESTS" \
     --out_csv "$RUN_ROOT/data/prefill_samples.csv"
   wc -l "$RUN_ROOT/data/prefill_samples.csv"
 
@@ -137,7 +177,7 @@ EOF
     --input_jsonl "$RUN_ROOT/data/decode_prompts.jsonl" \
     --generated_tokens 128,256,512 \
     --endpoint completion \
-    --parallel_requests 4 \
+    --parallel_requests "$PARALLEL_REQUESTS" \
     --out_csv "$RUN_ROOT/data/decode_samples.csv"
   wc -l "$RUN_ROOT/data/decode_samples.csv"
 
@@ -156,15 +196,21 @@ EOF
 
 echo "========== BASELINE SERVER + PIPELINE =========="
 run_baseline_server
-trap 'stop_server' EXIT
+trap 'stop_metrics_logger; stop_server' EXIT
+start_metrics_logger "$BASELINE_RUN_ROOT"
 pipeline_for_run_root "$BASELINE_RUN_ROOT"
+stop_metrics_logger
+analyze_metrics_for_run_root "$BASELINE_RUN_ROOT"
 stop_server
 trap - EXIT
 
 echo "========== OFFLOAD SERVER + PIPELINE =========="
 run_offload_server
-trap 'stop_server' EXIT
+trap 'stop_metrics_logger; stop_server' EXIT
+start_metrics_logger "$OFFLOAD_RUN_ROOT"
 pipeline_for_run_root "$OFFLOAD_RUN_ROOT"
+stop_metrics_logger
+analyze_metrics_for_run_root "$OFFLOAD_RUN_ROOT"
 stop_server
 trap - EXIT
 
