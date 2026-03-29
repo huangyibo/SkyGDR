@@ -23,6 +23,10 @@
 
 ![pcie rx timeline](pcie_rx_timeline.svg)
 
+### Per-Request Zoom
+
+![pcie request zooms](pcie_request_zooms.svg)
+
 ## 3. 全窗口统计
 
 - duration: `15.524 s`

@@ -6,7 +6,7 @@ LOG="${1:-$HOME/SkyGDR/results/pd_external_prefix_imitation_run.log}"
 exec > >(tee -a "$LOG") 2>&1
 
 export ROOT="${ROOT:-$HOME/SkyGDR}"
-export RUN_ROOT="${RUN_ROOT:-$ROOT/results/pd_external_prefix_imitation_qwen3_8b}"
+export RUN_ROOT="${RUN_ROOT:-$ROOT/results/pd_external_prefix_terminalbench_qwen3_8b}"
 export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-8B}"
 export SERVED_MODEL="${SERVED_MODEL:-Qwen3-8B-Instruct}"
 export API_BASE="${API_BASE:-http://127.0.0.1:8000}"
@@ -16,13 +16,21 @@ export VENV_PATH="${VENV_PATH:-$DATA_ROOT/venvs/vllm}"
 export GPU_INDEX="${GPU_INDEX:-0}"
 export GPU_METRICS_INTERVAL_MS="${GPU_METRICS_INTERVAL_MS:-20}"
 export GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
+export MAX_NUM_SEQS="${MAX_NUM_SEQS:-4}"
 
-export SEED_PROMPT_TOKENS="${SEED_PROMPT_TOKENS:-24832}"
-export APPEND_TOKENS="${APPEND_TOKENS:-256,256,256,256,256}"
-export NUM_TURNS="${NUM_TURNS:-6}"
+export TERMINALBENCH_DATASET_NAME="${TERMINALBENCH_DATASET_NAME:-yoonholee/terminalbench-trajectories}"
+export TERMINALBENCH_SPLIT="${TERMINALBENCH_SPLIT:-train}"
+export TERMINALBENCH_CACHE_DIR="${TERMINALBENCH_CACHE_DIR:-$DATA_ROOT/hf-cache/datasets}"
+export TERMINALBENCH_STREAMING="${TERMINALBENCH_STREAMING:-0}"
+export MAX_ROWS_TO_SCAN="${MAX_ROWS_TO_SCAN:-400}"
+export NUM_SESSIONS="${NUM_SESSIONS:-4}"
+export REUSE_TURNS_PER_SESSION="${REUSE_TURNS_PER_SESSION:-5}"
+export SEED_PROMPT_TOKENS="${SEED_PROMPT_TOKENS:-24576}"
+export APPEND_TOKENS="${APPEND_TOKENS:-256}"
 export DECODE_TOKENS="${DECODE_TOKENS:-16}"
 export POST_REQUEST_SETTLE_MS="${POST_REQUEST_SETTLE_MS:-1200}"
-export SLEEP_BETWEEN_REQUESTS_MS="${SLEEP_BETWEEN_REQUESTS_MS:-250}"
+export SLEEP_BETWEEN_GROUPS_MS="${SLEEP_BETWEEN_GROUPS_MS:-0}"
+export GROUP_CONCURRENCY="${GROUP_CONCURRENCY:-$NUM_SESSIONS}"
 
 export LMCACHE_CHUNK_SIZE="${LMCACHE_CHUNK_SIZE:-256}"
 export LMCACHE_LOCAL_CPU="${LMCACHE_LOCAL_CPU:-false}"
@@ -85,16 +93,6 @@ if [[ -z "$LMCACHE_REMOTE_URL" ]]; then
   export LMCACHE_REMOTE_URL="mock://${MOCK_STORAGE_GB}/?peeking_latency=${MOCK_PEEKING_LATENCY_MS}&read_throughput=${MOCK_READ_GBPS}&write_throughput=${MOCK_WRITE_GBPS}"
 fi
 
-cat > "$RUN_ROOT/data/session_prefix.txt" <<'EOF'
-System: You are helping a long-running coding agent that repeatedly inspects files, executes commands, reads large tool outputs, and accumulates context across many turns.
-
-User: The next several turns will append only a very small amount of new information, but the full prior context must remain available for reasoning.
-Assistant: Understood. I will preserve the full history and treat each turn as an extension of the same session.
-
-User: We care specifically about external prefix-cache behavior. Most previous tokens should be reused from shared storage, and only the tiny newly appended suffix should require fresh prefill computation.
-Assistant:
-EOF
-
 cat > "$RUN_ROOT/data/lmcache_config.yaml" <<EOF
 chunk_size: ${LMCACHE_CHUNK_SIZE}
 local_cpu: ${LMCACHE_LOCAL_CPU}
@@ -121,7 +119,7 @@ vllm serve "$MODEL_PATH" \
   --dtype bfloat16 \
   --max-model-len 32768 \
   --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
-  --max-num-seqs 1 \
+  --max-num-seqs "$MAX_NUM_SEQS" \
   --generation-config vllm \
   --no-enable-prefix-caching \
   --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}' \
@@ -135,13 +133,19 @@ start_metrics_logger
 echo "========== BUILD WORKLOAD =========="
 python3 src/tools/pd_build_external_prefix_workload.py \
   --model_or_tokenizer "$MODEL_PATH" \
+  --dataset_name "$TERMINALBENCH_DATASET_NAME" \
+  --split "$TERMINALBENCH_SPLIT" \
+  --dataset_cache_dir "$TERMINALBENCH_CACHE_DIR" \
+  $( [[ "$TERMINALBENCH_STREAMING" == "1" ]] && echo --streaming ) \
+  --max_rows_to_scan "$MAX_ROWS_TO_SCAN" \
+  --num_sessions "$NUM_SESSIONS" \
+  --reuse_turns_per_session "$REUSE_TURNS_PER_SESSION" \
   --seed_prompt_tokens "$SEED_PROMPT_TOKENS" \
   --append_tokens "$APPEND_TOKENS" \
-  --num_turns "$NUM_TURNS" \
   --decode_tokens "$DECODE_TOKENS" \
   --max_prompt_tokens 32768 \
   --chunk_size_tokens "$LMCACHE_CHUNK_SIZE" \
-  --session_prefix_file "$RUN_ROOT/data/session_prefix.txt" \
+  --selected_rows_out "$RUN_ROOT/data/selected_terminalbench_rows.jsonl" \
   --out "$RUN_ROOT/data/trajectory_workload.jsonl"
 
 echo "========== RUN WORKLOAD =========="
@@ -150,7 +154,8 @@ python3 src/tools/pd_run_external_prefix_workload.py \
   --model "$SERVED_MODEL" \
   --input_jsonl "$RUN_ROOT/data/trajectory_workload.jsonl" \
   --post_request_settle_ms "$POST_REQUEST_SETTLE_MS" \
-  --sleep_between_requests_ms "$SLEEP_BETWEEN_REQUESTS_MS" \
+  --sleep_between_groups_ms "$SLEEP_BETWEEN_GROUPS_MS" \
+  --group_concurrency "$GROUP_CONCURRENCY" \
   --ignore_eos \
   --out_csv "$RUN_ROOT/data/trajectory_samples.csv"
 

@@ -40,14 +40,14 @@
       "link_ref_GiB_s": 29.340386
     },
     "reuse": {
-      "duration_s": 9.566,
+      "duration_s": 9.565999999999999,
       "num_samples": 223,
       "tx_total_GiB": 2.505046,
       "rx_total_GiB": 20.799513,
       "total_transfer_GiB": 23.304558000000004,
-      "avg_tx_GiB_s": 0.2618697470206983,
-      "avg_rx_GiB_s": 2.174316642274723,
-      "avg_total_GiB_s": 2.43618628475852,
+      "avg_tx_GiB_s": 0.2618697470206984,
+      "avg_rx_GiB_s": 2.1743166422747233,
+      "avg_total_GiB_s": 2.4361862847585205,
       "peak_tx_GiB_s": 4.122732,
       "peak_rx_GiB_s": 35.758922,
       "peak_total_GiB_s": 39.132172,
@@ -101,5 +101,5 @@
       "end_unix_ms": 1774778642691
     }
   ],
-  "request_summary_csv": "/home/danyang/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/request_pcie_summary.csv"
+  "request_summary_csv": "results/pd_external_prefix_imitation_qwen3_8b/summary/request_pcie_summary.csv"
 }

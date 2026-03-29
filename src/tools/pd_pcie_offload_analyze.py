@@ -78,6 +78,8 @@ def load_requests(path: str) -> list[dict]:
             {
                 "request_id": r["request_id"],
                 "phase": r["phase"],
+                "dispatch_group": r.get("dispatch_group", r["request_id"]),
+                "dispatch_group_size": to_int(r.get("dispatch_group_size"), default=1),
                 "session_id": r["session_id"],
                 "turn_id": to_int(r["turn_id"]),
                 "prompt_tokens": to_int(r["prompt_tokens"]),
@@ -90,6 +92,10 @@ def load_requests(path: str) -> list[dict]:
                 "response_finish_ts_unix_ms": to_int(r["response_finish_ts_unix_ms"]),
                 "post_metrics_ts_unix_ms": to_int(r["post_metrics_ts_unix_ms"]),
                 "elapsed_ms": to_float(r["elapsed_ms"]),
+                "group_submit_ts_unix_ms": to_int(r.get("group_submit_ts_unix_ms") or r["submit_ts_unix_ms"]),
+                "group_response_finish_ts_unix_ms": to_int(r.get("group_response_finish_ts_unix_ms") or r["response_finish_ts_unix_ms"]),
+                "group_post_metrics_ts_unix_ms": to_int(r.get("group_post_metrics_ts_unix_ms") or r["post_metrics_ts_unix_ms"]),
+                "group_elapsed_ms": to_float(r.get("group_elapsed_ms"), default=to_float(r["elapsed_ms"])),
                 "usage_prompt_tokens": to_int(r["usage_prompt_tokens"], default=-1),
                 "usage_completion_tokens": to_int(r["usage_completion_tokens"], default=-1),
                 "lmcache_requested_tokens": to_int(r.get("lmcache_requested_tokens"), default=-1),
@@ -102,6 +108,17 @@ def load_requests(path: str) -> list[dict]:
                 "lmcache_hit_ratio": to_float(r.get("lmcache_hit_ratio"), default=0.0),
                 "lmcache_remote_read_GiB": to_float(r.get("lmcache_remote_read_GiB"), default=0.0),
                 "lmcache_remote_write_GiB": to_float(r.get("lmcache_remote_write_GiB"), default=0.0),
+                "group_lmcache_requested_tokens": to_int(r.get("group_lmcache_requested_tokens"), default=-1),
+                "group_lmcache_hit_tokens": to_int(r.get("group_lmcache_hit_tokens"), default=-1),
+                "group_lmcache_vllm_hit_tokens": to_int(r.get("group_lmcache_vllm_hit_tokens"), default=-1),
+                "group_lmcache_remote_read_bytes": to_int(r.get("group_lmcache_remote_read_bytes"), default=-1),
+                "group_lmcache_remote_write_bytes": to_int(r.get("group_lmcache_remote_write_bytes"), default=-1),
+                "group_lmcache_remote_read_requests": to_int(r.get("group_lmcache_remote_read_requests"), default=-1),
+                "group_lmcache_remote_write_requests": to_int(r.get("group_lmcache_remote_write_requests"), default=-1),
+                "group_lmcache_hit_ratio": to_float(r.get("group_lmcache_hit_ratio"), default=0.0),
+                "group_lmcache_remote_read_GiB": to_float(r.get("group_lmcache_remote_read_GiB"), default=0.0),
+                "group_lmcache_remote_write_GiB": to_float(r.get("group_lmcache_remote_write_GiB"), default=0.0),
+                "metrics_attribution_scope": r.get("metrics_attribution_scope", ""),
             }
         )
     if not out:
@@ -127,6 +144,21 @@ def build_request_spans(requests: list[dict]) -> list[dict]:
         }
         for r in requests
     ]
+
+
+def build_phase_intervals(requests: list[dict]) -> dict[str, list[tuple[int, int]]]:
+    grouped = {}
+    for r in requests:
+        key = (r["phase"], r.get("dispatch_group") or r["request_id"])
+        if key not in grouped:
+            grouped[key] = (
+                r.get("group_submit_ts_unix_ms") or r["submit_ts_unix_ms"],
+                r.get("group_post_metrics_ts_unix_ms") or r["post_metrics_ts_unix_ms"],
+            )
+    out: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    for (phase, _group), interval in grouped.items():
+        out[phase].append(interval)
+    return out
 
 
 def select_rows(rows: list[dict], start_ms: int, end_ms: int) -> list[dict]:
@@ -356,6 +388,297 @@ def build_direction_svg(rows: list[dict], spans: list[dict], windows: dict[str, 
         f.write("\n".join(parts))
 
 
+def build_request_zoom_svg(
+    metrics_rows: list[dict],
+    requests: list[dict],
+    out_svg: str,
+    title: str,
+    pre_ms: int = 150,
+    post_ms: int = 1350,
+) -> None:
+    width = 1100
+    card_h = 210
+    gap = 24
+    margin_left = 76
+    margin_right = 22
+    margin_top = 48
+    margin_bottom = 34
+    plot_w = width - margin_left - margin_right
+    plot_h = card_h - 68
+    total_h = margin_top + len(requests) * card_h + max(0, len(requests) - 1) * gap + margin_bottom
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{total_h}" viewBox="0 0 {width} {total_h}">',
+        f'<rect width="{width}" height="{total_h}" fill="white"/>',
+        f'<text x="{margin_left}" y="28" font-size="24" font-weight="700" font-family="Helvetica, Arial, sans-serif">{escape_xml(title)}</text>',
+    ]
+
+    for idx, req in enumerate(requests):
+        top = margin_top + idx * (card_h + gap)
+        start_ms = req["submit_ts_unix_ms"] - pre_ms
+        end_ms = req["post_metrics_ts_unix_ms"] + post_ms
+        rows = select_rows(metrics_rows, start_ms, end_ms)
+        if not rows:
+            continue
+
+        base_ts = req["submit_ts_unix_ms"]
+        t_s = [(r["ts_unix_ms"] - base_ts) / 1000.0 for r in rows]
+        min_t = min(t_s) if t_s else -0.1
+        max_t = max(t_s) if t_s else 1.0
+        if max_t <= min_t:
+            max_t = min_t + 1.0
+        max_y = max(max((r["pcie_tx_GiB_s"] for r in rows), default=0.0), max((r["pcie_rx_GiB_s"] for r in rows), default=0.0))
+        max_y = max(1.0, max_y * 1.10)
+
+        def x_fn(x: float) -> float:
+            return margin_left + ((x - min_t) / (max_t - min_t)) * plot_w
+
+        def y_fn(y: float) -> float:
+            return top + plot_h - (y / max_y) * plot_h
+
+        peak_tx = max((r["pcie_tx_GiB_s"] for r in rows), default=0.0)
+        peak_rx = max((r["pcie_rx_GiB_s"] for r in rows), default=0.0)
+        label = (
+            f"{req['request_id']}  phase={req['phase']}  turn={req['turn_id']}  "
+            f"prompt={req['prompt_tokens']}  peak_tx={peak_tx:.2f} GiB/s  peak_rx={peak_rx:.2f} GiB/s"
+        )
+        parts.append(f'<text x="{margin_left}" y="{top - 12}" font-size="15" font-weight="600" fill="#222" font-family="Helvetica, Arial, sans-serif">{escape_xml(label)}</text>')
+
+        req_x1 = x_fn(0.0)
+        req_x2 = x_fn((req["post_metrics_ts_unix_ms"] - req["submit_ts_unix_ms"]) / 1000.0)
+        phase_color = PHASE_COLORS.get(req["phase"], "#bbbbbb")
+        parts.append(f'<rect x="{req_x1:.1f}" y="{top:.1f}" width="{max(0.5, req_x2 - req_x1):.1f}" height="{plot_h:.1f}" fill="{phase_color}" opacity="0.08"/>')
+
+        for i in range(6):
+            y_val = max_y * i / 5.0
+            y_px = y_fn(y_val)
+            parts.append(f'<line x1="{margin_left}" y1="{y_px:.1f}" x2="{width - margin_right}" y2="{y_px:.1f}" stroke="#ececec" stroke-width="1"/>')
+            parts.append(f'<text x="{margin_left - 8}" y="{y_px + 4:.1f}" text-anchor="end" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{y_val:.1f}")}</text>')
+
+        parts.append(f'<line x1="{margin_left}" y1="{top + plot_h:.1f}" x2="{width - margin_right}" y2="{top + plot_h:.1f}" stroke="#222" stroke-width="1.2"/>')
+        parts.append(f'<line x1="{margin_left}" y1="{top:.1f}" x2="{margin_left}" y2="{top + plot_h:.1f}" stroke="#222" stroke-width="1.2"/>')
+
+        tx_pts = [(x_fn(t), y_fn(r["pcie_tx_GiB_s"])) for t, r in zip(t_s, rows)]
+        rx_pts = [(x_fn(t), y_fn(r["pcie_rx_GiB_s"])) for t, r in zip(t_s, rows)]
+        if tx_pts:
+            tx_path = " ".join([f"M {tx_pts[0][0]:.1f} {tx_pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in tx_pts[1:]])
+            parts.append(f'<path d="{tx_path}" fill="none" stroke="#4C78A8" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>')
+        if rx_pts:
+            rx_path = " ".join([f"M {rx_pts[0][0]:.1f} {rx_pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in rx_pts[1:]])
+            parts.append(f'<path d="{rx_path}" fill="none" stroke="#F58518" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>')
+
+        parts.append(f'<line x1="{req_x1:.1f}" y1="{top:.1f}" x2="{req_x1:.1f}" y2="{top + plot_h:.1f}" stroke="#666" stroke-dasharray="4 4" stroke-width="1.2"/>')
+        parts.append(f'<text x="{req_x1:.1f}" y="{top + plot_h + 18:.1f}" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">submit</text>')
+        parts.append(f'<line x1="{req_x2:.1f}" y1="{top:.1f}" x2="{req_x2:.1f}" y2="{top + plot_h:.1f}" stroke="#888" stroke-dasharray="4 4" stroke-width="1.2"/>')
+        parts.append(f'<text x="{req_x2:.1f}" y="{top + plot_h + 18:.1f}" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">metrics</text>')
+
+        for i in range(7):
+            tx = min_t + (max_t - min_t) * i / 6.0
+            x = x_fn(tx)
+            parts.append(f'<line x1="{x:.1f}" y1="{top:.1f}" x2="{x:.1f}" y2="{top + plot_h:.1f}" stroke="#f5f5f5" stroke-width="1"/>')
+            parts.append(f'<text x="{x:.1f}" y="{top + plot_h + 34:.1f}" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{tx:.2f}")}</text>')
+
+    legend_y = 34
+    legend_x = width - 220
+    parts.append(f'<rect x="{legend_x}" y="{legend_y}" width="170" height="52" rx="8" fill="#fff" stroke="#ddd"/>')
+    parts.append(f'<line x1="{legend_x + 12}" y1="{legend_y + 18}" x2="{legend_x + 32}" y2="{legend_y + 18}" stroke="#4C78A8" stroke-width="2.4"/>')
+    parts.append(f'<text x="{legend_x + 40}" y="{legend_y + 22}" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">TX GiB/s</text>')
+    parts.append(f'<line x1="{legend_x + 12}" y1="{legend_y + 36}" x2="{legend_x + 32}" y2="{legend_y + 36}" stroke="#F58518" stroke-width="2.4"/>')
+    parts.append(f'<text x="{legend_x + 40}" y="{legend_y + 40}" font-size="12" fill="#333" font-family="Helvetica, Arial, sans-serif">RX GiB/s</text>')
+
+    parts.append("</svg>")
+    with open(out_svg, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+
+def write_single_request_window_csv(
+    metrics_rows: list[dict],
+    req: dict,
+    out_csv: str,
+    pre_ms: int = 150,
+    post_ms: int = 1350,
+    end_ts_unix_ms: int | None = None,
+) -> None:
+    ensure_dir(os.path.dirname(out_csv) or ".")
+    start_ms = req["submit_ts_unix_ms"] - pre_ms
+    if end_ts_unix_ms is None:
+        end_ms = req["post_metrics_ts_unix_ms"] + post_ms
+    else:
+        end_ms = end_ts_unix_ms + post_ms
+    rows = select_rows(metrics_rows, start_ms, end_ms)
+    with open(out_csv, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "ts_unix_ms",
+            "t_since_submit_s",
+            "inside_request_window",
+            "pcie_tx_GiB_s",
+            "pcie_rx_GiB_s",
+            "pcie_total_GiB_s",
+            "pcie_tx_cum_GiB",
+            "pcie_rx_cum_GiB",
+            "pcie_total_cum_GiB",
+            "gpu_mem_used_GiB",
+            "util_gpu_pct",
+            "cpu_util_pct",
+        ])
+        for r in rows:
+            w.writerow([
+                r["ts_unix_ms"],
+                f"{(r['ts_unix_ms'] - req['submit_ts_unix_ms']) / 1000.0:.6f}",
+                int(req["submit_ts_unix_ms"] <= r["ts_unix_ms"] <= req["post_metrics_ts_unix_ms"]),
+                f"{r['pcie_tx_GiB_s']:.6f}",
+                f"{r['pcie_rx_GiB_s']:.6f}",
+                f"{r['pcie_total_GiB_s']:.6f}",
+                f"{r['pcie_tx_cum_GiB']:.6f}",
+                f"{r['pcie_rx_cum_GiB']:.6f}",
+                f"{r['pcie_total_cum_GiB']:.6f}",
+                f"{r['gpu_mem_used_GiB']:.6f}",
+                f"{r['util_gpu_pct']:.6f}",
+                f"{r['cpu_util_pct']:.6f}",
+            ])
+
+
+def build_single_request_svg(
+    metrics_rows: list[dict],
+    req: dict,
+    out_svg: str,
+    pre_ms: int = 150,
+    post_ms: int = 1350,
+    end_ts_unix_ms: int | None = None,
+    subtitle: str = "",
+) -> None:
+    width = 1100
+    height = 420
+    margin_left = 86
+    margin_right = 24
+    margin_top = 44
+    margin_bottom = 54
+    plot_w = width - margin_left - margin_right
+    plot_h = height - margin_top - margin_bottom
+
+    start_ms = req["submit_ts_unix_ms"] - pre_ms
+    if end_ts_unix_ms is None:
+        end_ms = req["post_metrics_ts_unix_ms"] + post_ms
+        req_end_ms = req["post_metrics_ts_unix_ms"]
+    else:
+        end_ms = end_ts_unix_ms + post_ms
+        req_end_ms = end_ts_unix_ms
+    rows = select_rows(metrics_rows, start_ms, end_ms)
+    if not rows:
+        return
+
+    t_s = [(r["ts_unix_ms"] - req["submit_ts_unix_ms"]) / 1000.0 for r in rows]
+    min_t = min(t_s)
+    max_t = max(t_s)
+    if max_t <= min_t:
+        max_t = min_t + 1.0
+    max_y = max(max((r["pcie_tx_GiB_s"] for r in rows), default=0.0), max((r["pcie_rx_GiB_s"] for r in rows), default=0.0))
+    max_y = max(1.0, max_y * 1.10)
+
+    def x_fn(x: float) -> float:
+        return margin_left + ((x - min_t) / (max_t - min_t)) * plot_w
+
+    def y_fn(y: float) -> float:
+        return margin_top + plot_h - (y / max_y) * plot_h
+
+    peak_tx = max((r["pcie_tx_GiB_s"] for r in rows), default=0.0)
+    peak_rx = max((r["pcie_rx_GiB_s"] for r in rows), default=0.0)
+    req_x1 = x_fn(0.0)
+    req_x2 = x_fn((req_end_ms - req["submit_ts_unix_ms"]) / 1000.0)
+    label = (
+        f"{req['request_id']}  phase={req['phase']}  turn={req['turn_id']}  "
+        f"prompt={req['prompt_tokens']}  peak_tx={peak_tx:.2f} GiB/s  peak_rx={peak_rx:.2f} GiB/s"
+    )
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        f'<rect width="{width}" height="{height}" fill="white"/>',
+        f'<text x="{margin_left}" y="26" font-size="22" font-weight="700" font-family="Helvetica, Arial, sans-serif">{escape_xml(label)}</text>',
+    ]
+    if subtitle:
+        parts.append(f'<text x="{margin_left}" y="46" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(subtitle)}</text>')
+        margin_top = 62
+        plot_h = height - margin_top - margin_bottom
+
+
+    for i in range(6):
+        y_val = max_y * i / 5.0
+        y_px = y_fn(y_val)
+        parts.append(f'<line x1="{margin_left}" y1="{y_px:.1f}" x2="{width - margin_right}" y2="{y_px:.1f}" stroke="#ececec" stroke-width="1"/>')
+        parts.append(f'<text x="{margin_left - 10}" y="{y_px + 4:.1f}" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{y_val:.1f}")}</text>')
+    parts.append(f'<line x1="{margin_left}" y1="{margin_top + plot_h:.1f}" x2="{width - margin_right}" y2="{margin_top + plot_h:.1f}" stroke="#222" stroke-width="1.4"/>')
+    parts.append(f'<line x1="{margin_left}" y1="{margin_top:.1f}" x2="{margin_left}" y2="{margin_top + plot_h:.1f}" stroke="#222" stroke-width="1.4"/>')
+
+    color_span = PHASE_COLORS.get(req["phase"], "#bbbbbb")
+    parts.append(f'<rect x="{req_x1:.1f}" y="{margin_top:.1f}" width="{max(0.5, req_x2 - req_x1):.1f}" height="{plot_h:.1f}" fill="{color_span}" opacity="0.08"/>')
+
+    tx_pts = [(x_fn(t), y_fn(r["pcie_tx_GiB_s"])) for t, r in zip(t_s, rows)]
+    rx_pts = [(x_fn(t), y_fn(r["pcie_rx_GiB_s"])) for t, r in zip(t_s, rows)]
+    if tx_pts:
+        tx_path = " ".join([f"M {tx_pts[0][0]:.1f} {tx_pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in tx_pts[1:]])
+        parts.append(f'<path d="{tx_path}" fill="none" stroke="#4C78A8" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>')
+    if rx_pts:
+        rx_path = " ".join([f"M {rx_pts[0][0]:.1f} {rx_pts[0][1]:.1f}"] + [f"L {x:.1f} {y:.1f}" for x, y in rx_pts[1:]])
+        parts.append(f'<path d="{rx_path}" fill="none" stroke="#F58518" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>')
+
+    parts.append(f'<line x1="{req_x1:.1f}" y1="{margin_top:.1f}" x2="{req_x1:.1f}" y2="{margin_top + plot_h:.1f}" stroke="#666" stroke-dasharray="4 4" stroke-width="1.2"/>')
+    parts.append(f'<text x="{req_x1:.1f}" y="{height - 18:.1f}" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">submit</text>')
+    parts.append(f'<line x1="{req_x2:.1f}" y1="{margin_top:.1f}" x2="{req_x2:.1f}" y2="{margin_top + plot_h:.1f}" stroke="#888" stroke-dasharray="4 4" stroke-width="1.2"/>')
+    end_label = "finish" if end_ts_unix_ms is not None else "metrics"
+    parts.append(f'<text x="{req_x2:.1f}" y="{height - 18:.1f}" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">{end_label}</text>')
+
+    for i in range(9):
+        tx = min_t + (max_t - min_t) * i / 8.0
+        x = x_fn(tx)
+        parts.append(f'<line x1="{x:.1f}" y1="{margin_top:.1f}" x2="{x:.1f}" y2="{margin_top + plot_h:.1f}" stroke="#f5f5f5" stroke-width="1"/>')
+        parts.append(f'<text x="{x:.1f}" y="{height - 2:.1f}" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">{escape_xml(f"{tx:.2f}")}</text>')
+
+    parts.append(f'<text x="{margin_left + plot_w/2:.1f}" y="{height - 34:.1f}" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif">time since request submit (s)</text>')
+    parts.append("</svg>")
+    with open(out_svg, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+
+def build_request_focus_artifacts(metrics_rows: list[dict], requests: list[dict], out_dir: str) -> None:
+    ensure_dir(out_dir)
+    for req in requests:
+        response_stats = summarize_single_interval(
+            metrics_rows,
+            req["submit_ts_unix_ms"],
+            req["response_finish_ts_unix_ms"],
+        )
+        metrics_stats = summarize_single_interval(
+            metrics_rows,
+            req["submit_ts_unix_ms"],
+            req["post_metrics_ts_unix_ms"],
+        )
+        subtitle = (
+            f"response_window={((req['response_finish_ts_unix_ms'] - req['submit_ts_unix_ms']) / 1000.0):.3f}s, "
+            f"response_tx={response_stats.get('tx_total_GiB', 0.0):.3f} GiB, "
+            f"response_rx={response_stats.get('rx_total_GiB', 0.0):.3f} GiB, "
+            f"metrics_tx={metrics_stats.get('tx_total_GiB', 0.0):.3f} GiB, "
+            f"metrics_rx={metrics_stats.get('rx_total_GiB', 0.0):.3f} GiB"
+        )
+        build_single_request_svg(
+            metrics_rows,
+            req,
+            os.path.join(out_dir, f"{req['request_id']}.svg"),
+            pre_ms=150,
+            post_ms=50,
+            end_ts_unix_ms=req["response_finish_ts_unix_ms"],
+            subtitle=subtitle,
+        )
+        write_single_request_window_csv(
+            metrics_rows,
+            req,
+            os.path.join(out_dir, f"{req['request_id']}.csv"),
+            pre_ms=150,
+            post_ms=50,
+            end_ts_unix_ms=req["response_finish_ts_unix_ms"],
+        )
+
+
 def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int], out_csv: str) -> None:
     ensure_dir(os.path.dirname(out_csv) or ".")
     with open(out_csv, "w", newline="") as f:
@@ -413,6 +736,8 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
         w.writerow([
             "request_id",
             "phase",
+            "dispatch_group",
+            "dispatch_group_size",
             "session_id",
             "turn_id",
             "prompt_tokens",
@@ -429,6 +754,10 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
             "lmcache_hit_ratio",
             "lmcache_remote_read_GiB",
             "lmcache_remote_write_GiB",
+            "group_lmcache_hit_ratio",
+            "group_lmcache_remote_read_GiB",
+            "group_lmcache_remote_write_GiB",
+            "metrics_attribution_scope",
             "tx_total_GiB",
             "rx_total_GiB",
             "total_transfer_GiB",
@@ -443,6 +772,8 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
             w.writerow([
                 r["request_id"],
                 r["phase"],
+                r["dispatch_group"],
+                r["dispatch_group_size"],
                 r["session_id"],
                 r["turn_id"],
                 r["prompt_tokens"],
@@ -459,6 +790,10 @@ def write_request_csv(metrics_rows: list[dict], requests: list[dict], out_csv: s
                 f"{r['lmcache_hit_ratio']:.6f}",
                 f"{r['lmcache_remote_read_GiB']:.6f}",
                 f"{r['lmcache_remote_write_GiB']:.6f}",
+                f"{r['group_lmcache_hit_ratio']:.6f}",
+                f"{r['group_lmcache_remote_read_GiB']:.6f}",
+                f"{r['group_lmcache_remote_write_GiB']:.6f}",
+                r["metrics_attribution_scope"],
                 f"{st['tx_total_GiB']:.6f}",
                 f"{st['rx_total_GiB']:.6f}",
                 f"{st['total_transfer_GiB']:.6f}",
@@ -479,10 +814,12 @@ def write_summary_md(
     total_svg: str,
     tx_svg: str,
     rx_svg: str,
+    zoom_svg: str,
 ) -> None:
     rel_total = os.path.relpath(total_svg, os.path.dirname(out_md))
     rel_tx = os.path.relpath(tx_svg, os.path.dirname(out_md))
     rel_rx = os.path.relpath(rx_svg, os.path.dirname(out_md))
+    rel_zoom = os.path.relpath(zoom_svg, os.path.dirname(out_md))
     rel_req = os.path.relpath(request_summary_csv, os.path.dirname(out_md))
 
     lines = []
@@ -510,6 +847,10 @@ def write_summary_md(
     lines.append("### RX")
     lines.append("")
     lines.append(f"![pcie rx timeline]({escape_xml(rel_rx)})")
+    lines.append("")
+    lines.append("### Per-Request Zoom")
+    lines.append("")
+    lines.append(f"![pcie request zooms]({escape_xml(rel_zoom)})")
     lines.append("")
     lines.append("## 3. 全窗口统计")
     lines.append("")
@@ -576,23 +917,29 @@ def main() -> int:
         raise SystemExit("no metrics rows overlap with request window")
 
     full_stats = summarize_intervals(metrics_rows, [(windows["window_start_unix_ms"], windows["window_end_unix_ms"])])
-    phase_intervals: dict[str, list[tuple[int, int]]] = defaultdict(list)
-    for span in spans:
-        phase_intervals[span["phase"]].append((span["start_unix_ms"], span["end_unix_ms"]))
+    phase_intervals = build_phase_intervals(requests)
     phase_stats = {phase: summarize_intervals(metrics_rows, intervals) for phase, intervals in phase_intervals.items()}
 
     out_dir = os.path.dirname(args.out_svg) or "."
     tx_svg = os.path.join(out_dir, "pcie_tx_timeline.svg")
     rx_svg = os.path.join(out_dir, "pcie_rx_timeline.svg")
+    zoom_svg = os.path.join(out_dir, "pcie_request_zooms.svg")
     request_summary_csv = os.path.join(out_dir, "request_pcie_summary.csv")
 
     ensure_dir(out_dir)
     build_main_svg(selected_rows, spans, windows, args.out_svg, f"PCIe Timeline: {args.run_label}")
     build_direction_svg(selected_rows, spans, windows, tx_svg, f"PCIe TX Timeline: {args.run_label}", "pcie_tx_GiB_s", "#4C78A8", "TX GiB/s")
     build_direction_svg(selected_rows, spans, windows, rx_svg, f"PCIe RX Timeline: {args.run_label}", "pcie_rx_GiB_s", "#F58518", "RX GiB/s")
+    build_request_zoom_svg(metrics_rows, requests, zoom_svg, f"PCIe Request Zooms: {args.run_label}")
+    single_dir = os.path.join(out_dir, "request_zoom")
+    ensure_dir(single_dir)
+    for req in requests:
+        build_single_request_svg(metrics_rows, req, os.path.join(single_dir, f"{req['request_id']}.svg"))
+        write_single_request_window_csv(metrics_rows, req, os.path.join(single_dir, f"{req['request_id']}.csv"))
+    build_request_focus_artifacts(metrics_rows, requests, os.path.join(out_dir, "request_focus"))
     write_window_csv(metrics_rows, spans, windows, args.out_csv)
     write_request_csv(metrics_rows, requests, request_summary_csv)
-    write_summary_md(args.out_md, args.run_label, windows, full_stats, phase_stats, spans, request_summary_csv, args.out_svg, tx_svg, rx_svg)
+    write_summary_md(args.out_md, args.run_label, windows, full_stats, phase_stats, spans, request_summary_csv, args.out_svg, tx_svg, rx_svg, zoom_svg)
 
     if args.out_json:
         ensure_dir(os.path.dirname(args.out_json) or ".")
@@ -613,6 +960,7 @@ def main() -> int:
     print(f"[ok] wrote {args.out_svg}")
     print(f"[ok] wrote {tx_svg}")
     print(f"[ok] wrote {rx_svg}")
+    print(f"[ok] wrote {zoom_svg}")
     print(f"[ok] wrote {args.out_md}")
     print(f"[ok] wrote {args.out_csv}")
     print(f"[ok] wrote {request_summary_csv}")

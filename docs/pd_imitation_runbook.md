@@ -1,205 +1,128 @@
-# 单 GPU 条件下的 External Prefix-Cache Imitation 执行手册
+# Terminal-Bench 驱动的 External Prefix-Cache Imitation 手册
 
-这份手册已经**不再支持**旧的：
+这份手册现在只服务一个目标：
 
-- `prefill-only / decode-only`
-- `native offloading + pressure burst`
-- `prefill-restore` 主流程
+- 使用 **真实 Terminal-Bench 2.0 agent trajectories**
+- 在单 GPU 上通过 `vLLM + LMCache` 做 **external/shared prefix-cache imitation**
+- 把 workload 改成 **多 session + 分轮并发 reuse**
+- 尽量把 **prefill 侧 external read / PCIe RX** 打高
 
-当前唯一支持的目标是：
+当前主线已经不再推荐：
 
-- 用 `vLLM + LMCache`
-- 显式关闭 vLLM 自己的 GPU prefix caching
-- 把 LMCache 远端后端当作 **external/shared prefix cache**
-- 构造一个**长 session / 高 prefix reuse / 每轮只追加少量 suffix**
-- 直接观察：
-  - `LMCache remote read bytes`
-  - `LMCache hit tokens`
-  - `PCIe RX/TX` 随时间变化
+- synthetic prefix 文本
+- 单 session 串行 `reuse`
+- 旧的 `native offloading + pressure burst`
 
-换句话说，这份流程要 imitation 的是这种场景：
+## 1. 这版到底在 imitation 什么
 
-- 一个 agent/session 连续跑很多轮
-- 每一轮只追加很少的新 token
-- 大部分历史上下文都复用
-- 下一轮 prefill 主要不是重算历史 prefix
-- 而是从 external prefix cache 把历史 KV 拉回来，再只算新增 suffix
+要 imitation 的不是“单个长请求”，而是更接近 agentic workload 的场景：
 
-你真正关心的结果是：
+- 同时存在多条 agent session
+- 每条 session 都已经有很长的历史上下文
+- 新一轮只追加很少的新 token
+- 下一轮 prefill 主要工作是：
+  - 从 external/shared prefix cache 读回历史 KV
+  - 只对新增 suffix 做新的 prefill
 
-- `seed` 阶段：
-  - 长前缀是否真的被写入 external cache
-- `reuse` 阶段：
-  - `LMCache remote read` 是否很大
-  - `PCIe RX / H2D` 是否被显著抬高
+为了尽量把 prefill 侧打满，这版做了两件重要的事：
 
-## 1. 这一版和上一版的本质区别
+1. **真实数据源**
+   - 直接使用 `Terminal-Bench 2.0 Trajectories`
+2. **多 session 并发 reuse**
+   - 不是单条 session 一轮一轮串行跑
+   - 而是多条 session 在同一个 `reuse_round_*` 里并发发出
 
-上一版更像：
+## 2. 数据源
 
-- 依赖 `native CPU offloading`
-- 想用 eviction pressure 把旧 KV 从 GPU 挤走
-- 再观察下一轮 restore
+默认数据集：
 
-这一版更像：
+- `yoonholee/terminalbench-trajectories`
 
-- 直接把 LMCache 远端后端作为 **external/shared prefix cache**
-- 不再依赖 GPU 内部 prefix cache
-- 不再依赖 pressure burst
-- 让每个 reuse turn 都走：
-  - `external cache hit`
-  - `remote read`
-  - `GPU RX`
+参考：
 
-所以新版关注的是：
+- 数据集页：https://huggingface.co/datasets/yoonholee/terminalbench-trajectories
+- Terminal-Bench 仓库：https://github.com/harbor-framework/terminal-bench
 
-- **LMCache hit ratio**
-- **LMCache remote read/write bytes**
-- **reuse turn 的 PCIe RX**
+当前接入方式不是简单把整条消息直接喂进去，而是：
 
-而不是旧版的：
+- 从 dataset row 中提取 `steps / trajectory / messages` 这类轨迹字段
+- 渲染成连续 transcript
+- 选择足够长的真实轨迹
+- 再按 chunk-aligned token 长度切出：
+  - `seed`
+  - 后续多个 `reuse` turn
 
-- `pressure` 有没有把 eviction 打起来
-- `native offload` 有没有逼出 restore
+所以当前 workload 仍然保留了“高复用、chunk 对齐”的实验控制性，但内容来自真实 agent 轨迹。
 
-## 2. 这一版的默认技术路线
+## 3. 默认实验配置
 
-### 2.1 模型
+### 3.1 模型与服务
 
 - 实际模型：`Qwen/Qwen3-8B`
 - 服务名：`Qwen3-8B-Instruct`
 
-### 2.2 服务参数
-
-默认服务参数是：
+默认 `vllm serve` 关键参数：
 
 - `dtype=bfloat16`
 - `max-model-len=32768`
 - `gpu-memory-utilization=0.85`
-- `max-num-seqs=1`
+- `max-num-seqs=4`
 - `--no-enable-prefix-caching`
 - `--kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'`
 
-这里最重要的设计点有两个：
+这里最关键的两点：
 
 1. `--no-enable-prefix-caching`
    - 关闭 vLLM 自己的 GPU prefix cache
-   - 避免 GPU 本地命中把 external cache 命中遮住
+   - 避免 GPU 本地命中把 external/shared 命中遮掉
 
-2. `LMCacheConnectorV1`
-   - 把共享前缀的存取交给 LMCache
-   - 让后续 reuse turn 真正产生 `remote read`
+2. `max-num-seqs=4`
+   - 允许多个 `reuse` 请求在同一轮并发
+   - 让 aggregate prefill load 更容易抬高
 
-### 2.3 LMCache 默认配置
+### 3.2 LMCache 默认配置
 
-默认会写一份 `lmcache_config.yaml`，关键配置是：
+默认会生成：
 
 - `chunk_size: 256`
 - `local_cpu: false`
-- `max_local_cpu_size: 10`（与 [LMCache Mock 官方示例](https://docs.lmcache.ai/kv_cache/storage_backends/mock.html) 一致；设为 `0` 可能导致无 Local CPU backend，远程后端健康检查失败，整站表现为 `LMCache is unhealthy`）
+- `max_local_cpu_size: 10`
 - `remote_serde: "naive"`
 - `save_decode_cache: false`
 - `save_unfull_chunk: false`
 
-这样做的目的很明确：
+默认 external backend 仍然是 LMCache 官方的 `mock://` remote backend，主要是为了单机快速 imitation。
 
-- `chunk_size=256`
-  - 让每轮追加也按 `256` token 对齐
-  - 最大化可复用 chunk 的比例
-- `local_cpu=false`
-  - 关闭「本地 CPU 热缓存」语义上的优先使用；`max_local_cpu_size` 仍保留小容量以符合官方 mock 配置并让健康检查能分配测试缓冲区
-- `save_decode_cache=false`
-  - 不把重点放在 decode 生成出来的 KV
-  - 让实验更聚焦于 prompt/prefix 复用
-- `save_unfull_chunk=false`
-  - 只缓存完整 chunk
-  - 配合 chunk-aligned prompt，让行为更稳定、更容易解释
-
-### 2.4 默认 external backend
-
-默认 backend 是：
-
-- `mock://...`
-
-也就是 LMCache 官方提供的 **mock remote backend**。
-
-这条默认路线的意义是：
-
-- 不需要额外起 Valkey / centralized server
-- 仍然是 LMCache 的 remote backend 语义
-- 可以直接控制：
-  - `peeking_latency`
-  - `read_throughput`
-  - `write_throughput`
-
-默认参数是：
+默认相关参数：
 
 - `MOCK_STORAGE_GB=256`
 - `MOCK_PEEKING_LATENCY_MS=1`
 - `MOCK_READ_GBPS=40`
 - `MOCK_WRITE_GBPS=8`
 
-这组默认值的意图是：
+### 3.3 Terminal-Bench workload 默认参数
 
-- 让 `reuse` 阶段的 external read 足够强
-- 同时让 `seed` 阶段的 external write 也能被观测到
+默认参数已经改成更偏“把 prefill aggregate load 打高”的配置：
 
-如果你后面想换成更“真的”后端，可以覆盖：
+- `NUM_SESSIONS=4`
+- `REUSE_TURNS_PER_SESSION=5`
+- `SEED_PROMPT_TOKENS=24576`
+- `APPEND_TOKENS=256`
+- `DECODE_TOKENS=16`
+- `MAX_ROWS_TO_SCAN=400`
+- `GROUP_CONCURRENCY=4`
+- `SLEEP_BETWEEN_GROUPS_MS=0`
 
-```bash
-export LMCACHE_REMOTE_URL='lm://127.0.0.1:65432'
-```
+这些参数的含义是：
 
-或者别的官方支持后端 URL。主流程和分析脚本不用改。
+- 先挑 `4` 条足够长的真实 Terminal-Bench 轨迹
+- 每条先做一个 `seed` request
+- 然后进入 `5` 个 `reuse_round_*`
+- 每个 `reuse_round_*` 都会把这 `4` 条 session 同时发出去
 
-## 3. Workload 设计
+这比单条 session 串行更接近：
 
-默认 workload 不再有 `pressure`。
-
-它只包含：
-
-- `seed`
-- `reuse`
-
-默认参数是：
-
-- `seed_prompt_tokens = 24832`
-- `append_tokens = 256,256,256,256,256`
-- `num_turns = 6`
-- `decode_tokens = 16`
-- `chunk_size_tokens = 256`
-
-这表示：
-
-1. `turn_000_seed`
-   - 先提交一个约 `24.8K` token 的长 prompt
-   - 目的是把首轮长前缀写入 external cache
-
-2. `turn_001_reuse` 以后
-   - 每轮只追加 `256` 个新 token
-   - 让前一轮的大部分 prefix 都可以从 external cache 复用
-
-这里故意让：
-
-- 每轮新增都是 `256` token
-- 总 prompt 长度尽量保持 `256` 对齐
-
-因为我们当前就是在追：
-
-- **chunk-aligned external prefix hit**
-
-### 为什么 decode 要故意短
-
-这一版故意把：
-
-- `decode_tokens = 16`
-
-设得比较短。
-
-因为当前目标不是测 steady-state decode，而是：
-
-- 尽量让 prefill 阶段的 external read 更显眼
-- 避免长 decode 自己又制造很多额外干扰
+- prefill engines 持续从外部存储加载历史 KV
 
 ## 4. 输出目录
 
@@ -207,11 +130,12 @@ export LMCACHE_REMOTE_URL='lm://127.0.0.1:65432'
 
 ```bash
 export ROOT=$HOME/SkyGDR
-export RUN_ROOT=$ROOT/results/pd_external_prefix_imitation_qwen3_8b
+export RUN_ROOT=$ROOT/results/pd_external_prefix_terminalbench_qwen3_8b
 ```
 
-最终主要产物包括：
+最关键的输出包括：
 
+- `$RUN_ROOT/data/selected_terminalbench_rows.jsonl`
 - `$RUN_ROOT/data/trajectory_workload.jsonl`
 - `$RUN_ROOT/data/trajectory_samples.csv`
 - `$RUN_ROOT/logs/gpu_metrics.csv`
@@ -223,7 +147,7 @@ export RUN_ROOT=$ROOT/results/pd_external_prefix_imitation_qwen3_8b
 - `$RUN_ROOT/summary/pcie_timeline_report.md`
 - `$RUN_ROOT/summary/pd_imitation_report.md`
 
-## 5. 一次性环境准备
+## 5. 环境准备
 
 下面默认在 GPU server 上执行。
 
@@ -250,12 +174,12 @@ uv venv --python 3.12 --seed $VENV_PATH
 source $VENV_PATH/bin/activate
 
 uv pip install vllm --torch-backend=auto
-uv pip install lmcache "transformers>=4.51.0"
+uv pip install lmcache datasets "transformers>=4.51.0"
 ```
 
-## 6. 直接运行
+## 6. 一键运行
 
-新的主流程只有一个入口：
+主入口只有一个：
 
 - [run_pd_external_prefix_imitation.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_external_prefix_imitation.sh)
 
@@ -266,121 +190,120 @@ cd $ROOT
 bash scripts/run_pd_external_prefix_imitation.sh
 ```
 
-如果你想调外部后端强度，可以先设环境变量再跑：
+## 7. 推荐的“尽量把 prefill 打满”参数
+
+如果你目标很明确，就是尽量把 prefill 侧 aggregate RX 拉高，我建议先从这组开始：
 
 ```bash
-export MOCK_READ_GBPS=60
-export MOCK_WRITE_GBPS=8
+export NUM_SESSIONS=4
+export GROUP_CONCURRENCY=4
+export MAX_NUM_SEQS=4
+export SLEEP_BETWEEN_GROUPS_MS=0
+export SEED_PROMPT_TOKENS=24576
+export APPEND_TOKENS=256
+export DECODE_TOKENS=16
 export GPU_METRICS_INTERVAL_MS=20
 
 bash scripts/run_pd_external_prefix_imitation.sh
 ```
 
-如果你想换成真正的 centralized/shared backend：
+如果这组还不够，再往上推：
 
 ```bash
-export LMCACHE_REMOTE_URL='lm://127.0.0.1:65432'
+export NUM_SESSIONS=8
+export GROUP_CONCURRENCY=8
+export MAX_NUM_SEQS=8
+export SLEEP_BETWEEN_GROUPS_MS=0
+export MAX_ROWS_TO_SCAN=1000
+
 bash scripts/run_pd_external_prefix_imitation.sh
 ```
 
-## 7. 新主流程到底做了什么
+这组更激进，目的就是：
 
-这个脚本会依次做下面几件事：
+- 让更多真实 session 在同一轮一起做 reuse prefill
+- 让 aggregate external read 更接近系统瓶颈
+
+## 8. 主流程到底做了什么
+
+脚本会依次做这些事：
 
 1. 清理旧的 `vllm` 进程和残留显存
 2. 写出 `lmcache_config.yaml`
 3. 启动带 `LMCacheConnectorV1` 的 `vllm serve`
 4. 启动 [gpu_metrics_logger.py](/Users/daniel/Documents/code/SkyGDR/src/tools/gpu_metrics_logger.py)
-5. 用 [pd_build_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_external_prefix_workload.py) 生成多轮高复用 workload
-6. 用 [pd_run_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_external_prefix_workload.py) 顺序执行请求，并在每轮前后抓 `/metrics`
-7. 用 [pd_pcie_offload_analyze.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_pcie_offload_analyze.py) 生成 TX/RX/总带宽图和请求级统计
-8. 用 [pd_imitation_report.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_imitation_report.py) 写最终摘要
+5. 用 [pd_build_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_build_external_prefix_workload.py) 下载/扫描 Terminal-Bench，并生成真实 workload
+6. 用 [pd_run_external_prefix_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_run_external_prefix_workload.py) 按 `dispatch_group` 执行请求
+7. 用 [pd_pcie_offload_analyze.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_pcie_offload_analyze.py) 生成 PCIe TX/RX/总图
+8. 用 [pd_imitation_report.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_imitation_report.py) 写摘要报告
 
-## 8. 怎么看结果
+## 9. 如何看结果
 
-### 8.1 先看 `trajectory_samples.csv`
+### 9.1 先看 workload 选了哪些真实轨迹
 
-最关键的请求级结果表是：
+- `$RUN_ROOT/data/selected_terminalbench_rows.jsonl`
+
+这个文件告诉你：
+
+- 选中了哪些 Terminal-Bench row
+- 每条轨迹一共有多少 step
+- 总 token 大概有多少
+
+### 9.2 再看 `trajectory_samples.csv`
 
 - `$RUN_ROOT/data/trajectory_samples.csv`
 
-这里最值得看的是：
+现在最重要的不是旧的请求级 `lmcache_*` 字段，而是：
 
-- `lmcache_requested_tokens`
-- `lmcache_hit_tokens`
-- `lmcache_hit_ratio`
-- `lmcache_remote_read_GiB`
-- `lmcache_remote_write_GiB`
+- `dispatch_group`
+- `dispatch_group_size`
+- `group_lmcache_remote_read_GiB`
+- `group_lmcache_hit_ratio`
+- `metrics_attribution_scope`
 
-如果你想 imitate：
+因为现在是并发模式，LMCache metrics 是按整个 `dispatch_group` 归因的。
 
-- “prefill engines must load large volumes of KV-Cache from remote storage”
+### 9.3 最重要的是 RX 图
 
-那最直接的成功信号就是：
+最重要的图是：
 
-- `reuse` 行里的 `lmcache_hit_ratio` 很高
-- 同时 `lmcache_remote_read_GiB` 很大
+- [pcie_rx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_terminalbench_qwen3_8b/summary/pcie_rx_timeline.svg)
 
-### 8.2 再看 RX 图
+你要重点看：
 
-你当前最重要的图是：
+- `reuse` 阶段的 aggregate RX 是否比 `seed` 更高
+- 每个 `reuse_round_*` 是否形成连续高平台，而不是只有单个小 burst
 
-- [pcie_rx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/pcie_rx_timeline.svg)
+### 9.4 再看总图和 request zoom
 
-如果实验打对了，最值得期待的是：
+- `pcie_timeline.svg`
+- `pcie_request_zooms.svg`
+- `summary/request_focus/*.svg`
 
-- `reuse` 请求附近的 RX/H2D 明显抬高
+这三组图分别回答：
 
-### 8.3 再看 TX 图
+- 全局是不是被打高了
+- 哪些 round 在打
+- 单个请求的 burst 长什么样
 
-- [pcie_tx_timeline.svg](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/pcie_tx_timeline.svg)
+## 10. 结果如何才算“更接近目标”
 
-这张图主要用来判断：
+如果你要 mimic 的是“prefill side 持续 load 历史 KV”，那比起单请求峰值，更值得看这三件事：
 
-- `seed` 请求把长前缀写入 external cache 时，TX/D2H 有没有起来
+1. `reuse` 阶段的 **平均 RX**
+2. `reuse_round_*` 的 **group remote read GiB**
+3. `reuse` 阶段是不是出现了更长、更连续的 RX 高平台
 
-### 8.4 请求级汇总 CSV
+如果下一轮你发现：
 
-最有用的数据表是：
+- 单请求 burst 还是短
+- 但 `reuse` 阶段整体 RX 平台明显变长
+- 而且 group read 总量持续变大
 
-- [request_pcie_summary.csv](/Users/daniel/Documents/code/SkyGDR/results/pd_external_prefix_imitation_qwen3_8b/summary/request_pcie_summary.csv)
+那说明方向是对的。
 
-它已经把：
+## 11. 参考来源
 
-- LMCache 远端读写
-- 请求级 RX/TX 总量
-- 请求级 RX/TX 峰值
-
-都合在一张表里了。
-
-## 9. 如果 reuse 阶段效果还是不够强，优先调什么
-
-最优先调的是这几个：
-
-1. `seed_prompt_tokens`
-   - 让首轮长前缀更长
-2. `append_tokens`
-   - 继续保持 `256` 对齐，但可以把 turn 数变多
-3. `MOCK_READ_GBPS`
-   - 把外部后端读吞吐设得更高
-4. `GPU_METRICS_INTERVAL_MS`
-   - 调到 `10-20ms`，更容易抓到瞬时 RX 峰值
-
-如果你已经看到：
-
-- `lmcache_hit_ratio` 很高
-- `lmcache_remote_read_GiB` 很大
-
-但 `RX` 图还不够尖，
-那更像是：
-
-- 外部读回发生了
-- 只是被摊平在更长的 prefill 窗口里
-
-这时不要先怀疑“没命中”，而是先看：
-
-- 请求级 `lmcache_remote_read_GiB`
-- `pcie_rx_timeline.svg`
-- `request_pcie_summary.csv`
-
-三者是否一致。
+- Terminal-Bench dataset: https://huggingface.co/datasets/yoonholee/terminalbench-trajectories
+- Terminal-Bench repo: https://github.com/harbor-framework/terminal-bench
+- LMCache mock backend: https://docs.lmcache.ai/kv_cache/storage_backends/mock.html
