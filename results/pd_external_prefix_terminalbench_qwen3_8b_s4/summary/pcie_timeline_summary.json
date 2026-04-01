@@ -1,0 +1,231 @@
+{
+  "run_label": "pd_external_prefix_terminalbench_qwen3_8b_s4",
+  "windows": {
+    "window_start_unix_ms": 1775015653631,
+    "window_end_unix_ms": 1775015688774
+  },
+  "full": {
+    "duration_s": 35.143,
+    "num_samples": 815,
+    "tx_total_GiB": 23.841023,
+    "rx_total_GiB": 78.64468500000001,
+    "total_transfer_GiB": 102.485707,
+    "avg_tx_GiB_s": 0.6784003357709928,
+    "avg_rx_GiB_s": 2.2378477933016536,
+    "avg_total_GiB_s": 2.9162481006174774,
+    "peak_tx_GiB_s": 15.471736,
+    "peak_rx_GiB_s": 38.930774,
+    "peak_total_GiB_s": 40.56245,
+    "peak_tx_t_ms": 9617,
+    "peak_rx_t_ms": 27204,
+    "peak_total_t_ms": 27204,
+    "link_ref_GiB_s": 29.340386
+  },
+  "phases": {
+    "seed": {
+      "duration_s": 10.136000000000001,
+      "num_samples": 237,
+      "tx_total_GiB": 4.915805999999998,
+      "rx_total_GiB": 11.441800000000018,
+      "total_transfer_GiB": 16.357605000000003,
+      "avg_tx_GiB_s": 0.484984806629834,
+      "avg_rx_GiB_s": 1.128827940015787,
+      "avg_total_GiB_s": 1.6138126479873718,
+      "peak_tx_GiB_s": 15.456042,
+      "peak_rx_GiB_s": 28.318912,
+      "peak_total_GiB_s": 31.641544,
+      "peak_tx_t_ms": 2164,
+      "peak_rx_t_ms": 31718,
+      "peak_total_t_ms": 29842,
+      "link_ref_GiB_s": 29.340386
+    },
+    "reuse": {
+      "duration_s": 24.828000000000003,
+      "num_samples": 575,
+      "tx_total_GiB": 18.925412,
+      "rx_total_GiB": 67.20247900000001,
+      "total_transfer_GiB": 86.127892,
+      "avg_tx_GiB_s": 0.7622608345416465,
+      "avg_rx_GiB_s": 2.7067214032543903,
+      "avg_total_GiB_s": 3.4689822780731427,
+      "peak_tx_GiB_s": 15.471736,
+      "peak_rx_GiB_s": 38.930774,
+      "peak_total_GiB_s": 40.56245,
+      "peak_tx_t_ms": 5034,
+      "peak_rx_t_ms": 22621,
+      "peak_total_t_ms": 22621,
+      "link_ref_GiB_s": 29.340386
+    }
+  },
+  "requests": [
+    {
+      "request_id": "tb_session_00_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015653631,
+      "end_unix_ms": 1775015658205
+    },
+    {
+      "request_id": "tb_session_00_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015658215,
+      "end_unix_ms": 1775015669767
+    },
+    {
+      "request_id": "tb_session_01_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015658216,
+      "end_unix_ms": 1775015669767
+    },
+    {
+      "request_id": "tb_session_02_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015658218,
+      "end_unix_ms": 1775015669767
+    },
+    {
+      "request_id": "tb_session_03_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015658220,
+      "end_unix_ms": 1775015669767
+    },
+    {
+      "request_id": "tb_session_00_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015669787,
+      "end_unix_ms": 1775015673032
+    },
+    {
+      "request_id": "tb_session_01_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015669788,
+      "end_unix_ms": 1775015673032
+    },
+    {
+      "request_id": "tb_session_02_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015669790,
+      "end_unix_ms": 1775015673032
+    },
+    {
+      "request_id": "tb_session_03_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015669791,
+      "end_unix_ms": 1775015673032
+    },
+    {
+      "request_id": "tb_session_00_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015673056,
+      "end_unix_ms": 1775015676428
+    },
+    {
+      "request_id": "tb_session_01_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015673057,
+      "end_unix_ms": 1775015676428
+    },
+    {
+      "request_id": "tb_session_02_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015673059,
+      "end_unix_ms": 1775015676428
+    },
+    {
+      "request_id": "tb_session_03_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015673060,
+      "end_unix_ms": 1775015676428
+    },
+    {
+      "request_id": "tb_session_00_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015676452,
+      "end_unix_ms": 1775015679827
+    },
+    {
+      "request_id": "tb_session_01_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015676454,
+      "end_unix_ms": 1775015679827
+    },
+    {
+      "request_id": "tb_session_02_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015676455,
+      "end_unix_ms": 1775015679827
+    },
+    {
+      "request_id": "tb_session_03_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015676456,
+      "end_unix_ms": 1775015679827
+    },
+    {
+      "request_id": "tb_session_00_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015679853,
+      "end_unix_ms": 1775015683134
+    },
+    {
+      "request_id": "tb_session_01_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015679855,
+      "end_unix_ms": 1775015683134
+    },
+    {
+      "request_id": "tb_session_02_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015679856,
+      "end_unix_ms": 1775015683134
+    },
+    {
+      "request_id": "tb_session_03_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015679858,
+      "end_unix_ms": 1775015683134
+    },
+    {
+      "request_id": "tb_session_01_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015683158,
+      "end_unix_ms": 1775015685012
+    },
+    {
+      "request_id": "tb_session_02_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015685036,
+      "end_unix_ms": 1775015686889
+    },
+    {
+      "request_id": "tb_session_03_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015686923,
+      "end_unix_ms": 1775015688774
+    }
+  ],
+  "request_summary_csv": "/home/danyang/SkyGDR/results/pd_external_prefix_terminalbench_qwen3_8b_s4/summary/request_pcie_summary.csv"
+}

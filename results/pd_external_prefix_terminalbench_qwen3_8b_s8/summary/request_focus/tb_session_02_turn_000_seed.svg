@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420">
+<rect width="1100" height="420" fill="white"/>
+<text x="86" y="26" font-size="22" font-weight="700" font-family="Helvetica, Arial, sans-serif">tb_session_02_turn_000_seed  phase=seed  turn=0  prompt=24576  peak_tx=3.20 GiB/s  peak_rx=36.64 GiB/s</text>
+<text x="86" y="46" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">response_window=0.621s, response_tx=0.418 GiB, response_rx=4.264 GiB, metrics_tx=0.419 GiB, metrics_rx=4.265 GiB</text>
+<line x1="86" y1="366.0" x2="1076" y2="366.0" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="370.0" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">0.0</text>
+<line x1="86" y1="305.2" x2="1076" y2="305.2" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="309.2" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">8.1</text>
+<line x1="86" y1="244.4" x2="1076" y2="244.4" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="248.4" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">16.1</text>
+<line x1="86" y1="183.6" x2="1076" y2="183.6" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="187.6" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">24.2</text>
+<line x1="86" y1="122.8" x2="1076" y2="122.8" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="126.8" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">32.2</text>
+<line x1="86" y1="62.0" x2="1076" y2="62.0" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="66.0" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">40.3</text>
+<line x1="86" y1="366.0" x2="1076" y2="366.0" stroke="#222" stroke-width="1.4"/>
+<line x1="86" y1="62.0" x2="86" y2="366.0" stroke="#222" stroke-width="1.4"/>
+<rect x="258.3" y="62.0" width="781.2" height="304.0" fill="#4C78A8" opacity="0.08"/>
+<path d="M 86.0 366.0 L 138.8 366.0 L 191.7 366.0 L 244.5 366.0 L 297.3 366.0 L 350.2 366.0 L 403.0 366.0 L 457.1 366.0 L 509.9 366.0 L 562.8 366.0 L 616.9 342.1 L 687.3 341.8 L 752.7 353.5 L 806.8 365.9 L 860.9 365.9 L 915.0 365.9 L 969.1 365.9 L 1023.2 366.0 L 1076.0 366.0" fill="none" stroke="#4C78A8" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 86.0 366.0 L 138.8 366.0 L 191.7 366.0 L 244.5 366.0 L 297.3 366.0 L 350.2 366.0 L 403.0 366.0 L 457.1 366.0 L 509.9 366.0 L 562.8 224.9 L 616.9 89.6 L 687.3 156.6 L 752.7 365.8 L 806.8 365.8 L 860.9 365.8 L 915.0 365.8 L 969.1 365.8 L 1023.2 366.0 L 1076.0 366.0" fill="none" stroke="#F58518" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="258.3" y1="62.0" x2="258.3" y2="366.0" stroke="#666" stroke-dasharray="4 4" stroke-width="1.2"/>
+<text x="258.3" y="402.0" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">submit</text>
+<line x1="1039.5" y1="62.0" x2="1039.5" y2="366.0" stroke="#888" stroke-dasharray="4 4" stroke-width="1.2"/>
+<text x="1039.5" y="402.0" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">finish</text>
+<line x1="86.0" y1="62.0" x2="86.0" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="86.0" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">-0.14</text>
+<line x1="209.8" y1="62.0" x2="209.8" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="209.8" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">-0.04</text>
+<line x1="333.5" y1="62.0" x2="333.5" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="333.5" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.06</text>
+<line x1="457.2" y1="62.0" x2="457.2" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="457.2" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.16</text>
+<line x1="581.0" y1="62.0" x2="581.0" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="581.0" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.26</text>
+<line x1="704.8" y1="62.0" x2="704.8" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="704.8" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.35</text>
+<line x1="828.5" y1="62.0" x2="828.5" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="828.5" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.45</text>
+<line x1="952.2" y1="62.0" x2="952.2" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="952.2" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.55</text>
+<line x1="1076.0" y1="62.0" x2="1076.0" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="1076.0" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.65</text>
+<text x="581.0" y="386.0" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif">time since request submit (s)</text>
+</svg>

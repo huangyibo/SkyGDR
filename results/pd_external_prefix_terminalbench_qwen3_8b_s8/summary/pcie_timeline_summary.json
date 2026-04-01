@@ -1,0 +1,399 @@
+{
+  "run_label": "pd_external_prefix_terminalbench_qwen3_8b_s8",
+  "windows": {
+    "window_start_unix_ms": 1775015850371,
+    "window_end_unix_ms": 1775015912592
+  },
+  "full": {
+    "duration_s": 62.221,
+    "num_samples": 1442,
+    "tx_total_GiB": 45.263938,
+    "rx_total_GiB": 159.248082,
+    "total_transfer_GiB": 204.512021,
+    "avg_tx_GiB_s": 0.727470436026422,
+    "avg_rx_GiB_s": 2.5593944488195306,
+    "avg_total_GiB_s": 3.286864900917697,
+    "peak_tx_GiB_s": 15.46815,
+    "peak_rx_GiB_s": 43.618306,
+    "peak_total_GiB_s": 46.791554,
+    "peak_tx_t_ms": 1313,
+    "peak_rx_t_ms": 35512,
+    "peak_total_t_ms": 35512,
+    "link_ref_GiB_s": 29.340386
+  },
+  "phases": {
+    "seed": {
+      "duration_s": 17.501,
+      "num_samples": 406,
+      "tx_total_GiB": 7.78925400000001,
+      "rx_total_GiB": 26.569334999999977,
+      "total_transfer_GiB": 34.358588999999995,
+      "avg_tx_GiB_s": 0.4450747957259591,
+      "avg_rx_GiB_s": 1.5181609622307284,
+      "avg_total_GiB_s": 1.9632357579566877,
+      "peak_tx_GiB_s": 15.46815,
+      "peak_rx_GiB_s": 36.641397,
+      "peak_total_GiB_s": 39.811479,
+      "peak_tx_t_ms": 1314,
+      "peak_rx_t_ms": 51315,
+      "peak_total_t_ms": 51315,
+      "link_ref_GiB_s": 29.340386
+    },
+    "reuse": {
+      "duration_s": 44.457,
+      "num_samples": 1031,
+      "tx_total_GiB": 37.47404599999999,
+      "rx_total_GiB": 132.67814500000003,
+      "total_transfer_GiB": 170.15218900000002,
+      "avg_tx_GiB_s": 0.8429279078660276,
+      "avg_rx_GiB_s": 2.984415165215827,
+      "avg_total_GiB_s": 3.8273430280945635,
+      "peak_tx_GiB_s": 15.451805,
+      "peak_rx_GiB_s": 43.618306,
+      "peak_total_GiB_s": 46.791554,
+      "peak_tx_t_ms": 11323,
+      "peak_rx_t_ms": 30945,
+      "peak_total_t_ms": 30945,
+      "link_ref_GiB_s": 29.340386
+    }
+  },
+  "requests": [
+    {
+      "request_id": "tb_session_00_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015850371,
+      "end_unix_ms": 1775015854931
+    },
+    {
+      "request_id": "tb_session_00_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854939,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_01_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854940,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_02_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854942,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_03_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854944,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_04_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854946,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_05_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854947,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_06_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854949,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_07_turn_001_reuse",
+      "phase": "reuse",
+      "turn_id": 1,
+      "start_unix_ms": 1775015854950,
+      "end_unix_ms": 1775015879074
+    },
+    {
+      "request_id": "tb_session_00_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879094,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_01_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879095,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_02_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879097,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_03_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879098,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_04_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879100,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_05_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879101,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_06_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879102,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_07_turn_002_reuse",
+      "phase": "reuse",
+      "turn_id": 2,
+      "start_unix_ms": 1775015879103,
+      "end_unix_ms": 1775015884111
+    },
+    {
+      "request_id": "tb_session_00_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884135,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_01_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884136,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_02_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884138,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_03_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884139,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_04_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884140,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_05_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884142,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_06_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884143,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_07_turn_003_reuse",
+      "phase": "reuse",
+      "turn_id": 3,
+      "start_unix_ms": 1775015884144,
+      "end_unix_ms": 1775015889131
+    },
+    {
+      "request_id": "tb_session_00_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889155,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_01_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889156,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_02_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889157,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_03_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889158,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_04_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889160,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_05_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889161,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_06_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889162,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_07_turn_004_reuse",
+      "phase": "reuse",
+      "turn_id": 4,
+      "start_unix_ms": 1775015889163,
+      "end_unix_ms": 1775015894279
+    },
+    {
+      "request_id": "tb_session_00_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894303,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_01_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894305,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_02_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894306,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_03_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894307,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_04_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894309,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_05_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894310,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_06_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894312,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_07_turn_005_reuse",
+      "phase": "reuse",
+      "turn_id": 5,
+      "start_unix_ms": 1775015894313,
+      "end_unix_ms": 1775015899484
+    },
+    {
+      "request_id": "tb_session_01_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015899510,
+      "end_unix_ms": 1775015901376
+    },
+    {
+      "request_id": "tb_session_02_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015901400,
+      "end_unix_ms": 1775015903246
+    },
+    {
+      "request_id": "tb_session_03_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015903270,
+      "end_unix_ms": 1775015905115
+    },
+    {
+      "request_id": "tb_session_04_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015905140,
+      "end_unix_ms": 1775015906985
+    },
+    {
+      "request_id": "tb_session_05_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015907009,
+      "end_unix_ms": 1775015908853
+    },
+    {
+      "request_id": "tb_session_06_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015908877,
+      "end_unix_ms": 1775015910723
+    },
+    {
+      "request_id": "tb_session_07_turn_000_seed",
+      "phase": "seed",
+      "turn_id": 0,
+      "start_unix_ms": 1775015910747,
+      "end_unix_ms": 1775015912592
+    }
+  ],
+  "request_summary_csv": "/home/danyang/SkyGDR/results/pd_external_prefix_terminalbench_qwen3_8b_s8/summary/request_pcie_summary.csv"
+}

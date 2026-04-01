@@ -693,6 +693,9 @@ def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int
             "pcie_tx_cum_GiB",
             "pcie_rx_cum_GiB",
             "pcie_total_cum_GiB",
+            "pcie_tx_delta_GiB",
+            "pcie_rx_delta_GiB",
+            "pcie_total_delta_GiB",
             "pcie_tx_util_pct",
             "pcie_rx_util_pct",
             "pcie_total_util_pct",
@@ -701,6 +704,9 @@ def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int
             "cpu_util_pct",
         ])
         base_ts = windows["window_start_unix_ms"]
+        last_tx_cum = None
+        last_rx_cum = None
+        last_total_cum = None
         for r in rows:
             if r["ts_unix_ms"] < windows["window_start_unix_ms"] or r["ts_unix_ms"] > windows["window_end_unix_ms"]:
                 continue
@@ -710,6 +716,20 @@ def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int
                 if span["start_unix_ms"] <= r["ts_unix_ms"] <= span["end_unix_ms"]
             ]
             phase = "+".join(sorted(set(active_phases))) if active_phases else "idle"
+            tx_cum = r["pcie_tx_cum_GiB"]
+            rx_cum = r["pcie_rx_cum_GiB"]
+            total_cum = r["pcie_total_cum_GiB"]
+            if last_tx_cum is None:
+                tx_delta = 0.0
+                rx_delta = 0.0
+                total_delta = 0.0
+            else:
+                tx_delta = max(0.0, tx_cum - last_tx_cum)
+                rx_delta = max(0.0, rx_cum - last_rx_cum)
+                total_delta = max(0.0, total_cum - last_total_cum)
+            last_tx_cum = tx_cum
+            last_rx_cum = rx_cum
+            last_total_cum = total_cum
             w.writerow([
                 r["ts_unix_ms"],
                 f"{(r['ts_unix_ms'] - base_ts) / 1000.0:.6f}",
@@ -717,9 +737,12 @@ def write_window_csv(rows: list[dict], spans: list[dict], windows: dict[str, int
                 f"{r['pcie_tx_GiB_s']:.6f}",
                 f"{r['pcie_rx_GiB_s']:.6f}",
                 f"{r['pcie_total_GiB_s']:.6f}",
-                f"{r['pcie_tx_cum_GiB']:.6f}",
-                f"{r['pcie_rx_cum_GiB']:.6f}",
-                f"{r['pcie_total_cum_GiB']:.6f}",
+                f"{tx_cum:.6f}",
+                f"{rx_cum:.6f}",
+                f"{total_cum:.6f}",
+                f"{tx_delta:.6f}",
+                f"{rx_delta:.6f}",
+                f"{total_delta:.6f}",
                 f"{r['pcie_tx_util_pct']:.6f}",
                 f"{r['pcie_rx_util_pct']:.6f}",
                 f"{r['pcie_total_util_pct']:.6f}",

@@ -343,7 +343,37 @@ def main() -> int:
             f"need {args.num_sessions}. Try increasing --max_rows_to_scan or lowering seed/turn targets."
         )
 
-    selected = candidates[: args.num_sessions]
+    # We may occasionally fail to construct an exactly token-aligned prefix for
+    # a particular trajectory (e.g. target_tokens not reachable while preserving
+    # previous prefix). Instead of failing the whole script, we skip such rows
+    # and keep trying until we collect enough sessions.
+    selected = []
+    for candidate in candidates:
+      if len(selected) >= args.num_sessions:
+        break
+      ok = True
+      prev_text = ""
+      for target_prompt_tokens in total_targets:
+        try:
+          _ = find_exact_prefix_text(
+              tokenizer,
+              candidate["token_ids"],
+              target_prompt_tokens,
+              prev_text,
+          )
+        except RuntimeError:
+          ok = False
+          break
+        # For feasibility check we only care that some prefix exists; we don't
+        # need to update prev_text/token counts here.
+      if ok:
+        selected.append(candidate)
+
+    if len(selected) < args.num_sessions:
+        raise SystemExit(
+            f"only found {len(selected)} Terminal-Bench trajectories that satisfy all prefix targets; "
+            f"need {args.num_sessions}. Try increasing --max_rows_to_scan or lowering seed/turn targets."
+        )
     rows = []
     selected_rows = []
     for sess_idx, candidate in enumerate(selected):

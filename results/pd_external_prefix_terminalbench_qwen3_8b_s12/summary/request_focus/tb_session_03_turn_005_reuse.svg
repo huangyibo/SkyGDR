@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420">
+<rect width="1100" height="420" fill="white"/>
+<text x="86" y="26" font-size="22" font-weight="700" font-family="Helvetica, Arial, sans-serif">tb_session_03_turn_005_reuse  phase=reuse  turn=5  prompt=25856  peak_tx=4.30 GiB/s  peak_rx=34.60 GiB/s</text>
+<text x="86" y="46" font-size="13" fill="#444" font-family="Helvetica, Arial, sans-serif">response_window=5.650s, response_tx=5.695 GiB, response_rx=47.611 GiB, metrics_tx=5.696 GiB, metrics_rx=47.612 GiB</text>
+<line x1="86" y1="366.0" x2="1076" y2="366.0" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="370.0" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">0.0</text>
+<line x1="86" y1="305.2" x2="1076" y2="305.2" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="309.2" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">7.6</text>
+<line x1="86" y1="244.4" x2="1076" y2="244.4" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="248.4" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">15.2</text>
+<line x1="86" y1="183.6" x2="1076" y2="183.6" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="187.6" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">22.8</text>
+<line x1="86" y1="122.8" x2="1076" y2="122.8" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="126.8" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">30.5</text>
+<line x1="86" y1="62.0" x2="1076" y2="62.0" stroke="#ececec" stroke-width="1"/>
+<text x="76" y="66.0" text-anchor="end" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">38.1</text>
+<line x1="86" y1="366.0" x2="1076" y2="366.0" stroke="#222" stroke-width="1.4"/>
+<line x1="86" y1="62.0" x2="86" y2="366.0" stroke="#222" stroke-width="1.4"/>
+<rect x="104.7" y="62.0" width="969.4" height="304.0" fill="#F58518" opacity="0.08"/>
+<path d="M 86.0 366.0 L 93.2 366.0 L 100.4 366.0 L 107.6 366.0 L 114.8 366.0 L 122.0 366.0 L 129.2 366.0 L 136.4 366.0 L 144.0 366.0 L 151.4 366.0 L 158.6 340.6 L 166.3 340.7 L 174.0 340.7 L 181.6 360.3 L 188.9 366.0 L 196.3 350.6 L 203.5 366.0 L 210.7 366.0 L 217.9 366.0 L 225.1 366.0 L 232.4 366.0 L 239.7 366.0 L 246.9 366.0 L 254.3 366.0 L 261.7 366.0 L 268.9 366.0 L 276.1 366.0 L 283.3 366.0 L 290.5 366.0 L 297.7 366.0 L 304.9 366.0 L 312.1 366.0 L 319.5 366.0 L 326.7 366.0 L 333.9 366.0 L 341.1 366.0 L 348.5 366.0 L 355.7 366.0 L 362.9 366.0 L 370.3 340.9 L 378.0 340.8 L 385.9 340.4 L 394.0 365.9 L 401.2 365.9 L 408.6 344.0 L 415.9 338.5 L 424.7 340.6 L 432.4 361.7 L 439.8 366.0 L 447.0 355.8 L 454.9 340.4 L 463.0 340.8 L 471.4 355.7 L 479.1 366.0 L 486.3 362.3 L 493.8 340.5 L 501.4 336.2 L 509.8 340.9 L 517.2 366.0 L 524.4 366.0 L 531.8 340.6 L 540.2 340.3 L 548.4 340.5 L 555.9 366.0 L 563.3 366.0 L 570.7 331.7 L 581.3 340.5 L 589.1 338.9 L 596.8 366.0 L 604.0 366.0 L 611.4 340.8 L 618.9 340.7 L 627.3 340.8 L 635.4 366.0 L 642.8 366.0 L 650.0 366.0 L 657.2 366.0 L 664.6 366.0 L 671.8 366.0 L 679.3 366.0 L 686.5 353.9 L 693.9 366.0 L 701.1 366.0 L 708.3 366.0 L 715.5 366.0 L 722.7 366.0 L 730.1 366.0 L 737.3 366.0 L 744.7 366.0 L 751.9 366.0 L 759.1 365.9 L 766.3 365.9 L 773.5 366.0 L 780.9 366.0 L 788.1 366.0 L 795.3 340.3 L 803.0 340.5 L 810.7 340.5 L 818.8 365.5 L 826.2 366.0 L 833.4 352.3 L 840.9 340.5 L 849.3 340.6 L 857.2 353.1 L 864.8 366.0 L 872.2 362.9 L 879.5 336.2 L 888.8 340.7 L 896.4 345.7 L 903.7 366.0 L 911.1 366.0 L 918.7 340.4 L 926.4 340.5 L 935.0 339.0 L 943.2 365.9 L 951.4 366.0 L 958.8 366.0 L 966.2 366.0 L 973.4 366.0 L 980.6 365.9 L 988.0 365.9 L 995.4 365.9 L 1002.6 365.9 L 1009.9 365.9 L 1017.1 365.9 L 1024.5 365.9 L 1031.7 365.9 L 1039.1 365.9 L 1046.3 365.9 L 1054.0 365.9 L 1061.4 365.9 L 1068.8 365.9 L 1076.0 366.0" fill="none" stroke="#4C78A8" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 86.0 366.0 L 93.2 366.0 L 100.4 366.0 L 107.6 366.0 L 114.8 366.0 L 122.0 366.0 L 129.2 366.0 L 136.4 365.9 L 144.0 366.0 L 151.4 366.0 L 158.6 141.4 L 166.3 144.2 L 174.0 141.6 L 181.6 365.9 L 188.9 366.0 L 196.3 366.0 L 203.5 366.0 L 210.7 365.9 L 217.9 365.9 L 225.1 366.0 L 232.4 366.0 L 239.7 366.0 L 246.9 366.0 L 254.3 366.0 L 261.7 366.0 L 268.9 366.0 L 276.1 366.0 L 283.3 366.0 L 290.5 366.0 L 297.7 366.0 L 304.9 366.0 L 312.1 366.0 L 319.5 366.0 L 326.7 366.0 L 333.9 366.0 L 341.1 366.0 L 348.5 366.0 L 355.7 366.0 L 362.9 293.0 L 370.3 141.7 L 378.0 121.8 L 385.9 195.5 L 394.0 366.0 L 401.2 366.0 L 408.6 143.0 L 415.9 139.3 L 424.7 142.8 L 432.4 366.0 L 439.8 366.0 L 447.0 125.9 L 454.9 143.8 L 463.0 89.9 L 471.4 366.0 L 479.1 366.0 L 486.3 143.9 L 493.8 144.9 L 501.4 142.0 L 509.8 365.9 L 517.2 366.0 L 524.4 246.1 L 531.8 95.9 L 540.2 143.8 L 548.4 267.7 L 555.9 366.0 L 563.3 326.2 L 570.7 144.0 L 581.3 142.7 L 589.1 317.9 L 596.8 366.0 L 604.0 288.5 L 611.4 143.7 L 618.9 103.6 L 627.3 238.2 L 635.4 365.9 L 642.8 365.9 L 650.0 365.9 L 657.2 365.9 L 664.6 365.9 L 671.8 365.9 L 679.3 365.9 L 686.5 365.5 L 693.9 366.0 L 701.1 366.0 L 708.3 366.0 L 715.5 366.0 L 722.7 366.0 L 730.1 366.0 L 737.3 366.0 L 744.7 366.0 L 751.9 366.0 L 759.1 366.0 L 766.3 366.0 L 773.5 365.9 L 780.9 366.0 L 788.1 357.0 L 795.3 143.1 L 803.0 145.2 L 810.7 144.1 L 818.8 366.0 L 826.2 366.0 L 833.4 145.2 L 840.9 97.9 L 849.3 143.1 L 857.2 366.0 L 864.8 366.0 L 872.2 145.0 L 879.5 139.5 L 888.8 142.1 L 896.4 366.0 L 903.7 366.0 L 911.1 181.7 L 918.7 144.4 L 926.4 89.6 L 935.0 365.5 L 943.2 365.8 L 951.4 365.9 L 958.8 365.9 L 966.2 365.9 L 973.4 365.6 L 980.6 365.7 L 988.0 365.7 L 995.4 365.7 L 1002.6 365.7 L 1009.9 365.7 L 1017.1 365.8 L 1024.5 365.8 L 1031.7 365.8 L 1039.1 365.8 L 1046.3 365.7 L 1054.0 365.7 L 1061.4 365.7 L 1068.8 365.8 L 1076.0 366.0" fill="none" stroke="#F58518" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="104.7" y1="62.0" x2="104.7" y2="366.0" stroke="#666" stroke-dasharray="4 4" stroke-width="1.2"/>
+<text x="104.7" y="402.0" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">submit</text>
+<line x1="1074.1" y1="62.0" x2="1074.1" y2="366.0" stroke="#888" stroke-dasharray="4 4" stroke-width="1.2"/>
+<text x="1074.1" y="402.0" text-anchor="middle" font-size="12" fill="#444" font-family="Helvetica, Arial, sans-serif">finish</text>
+<line x1="86.0" y1="62.0" x2="86.0" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="86.0" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">-0.11</text>
+<line x1="209.8" y1="62.0" x2="209.8" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="209.8" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">0.61</text>
+<line x1="333.5" y1="62.0" x2="333.5" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="333.5" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">1.33</text>
+<line x1="457.2" y1="62.0" x2="457.2" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="457.2" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">2.05</text>
+<line x1="581.0" y1="62.0" x2="581.0" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="581.0" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">2.78</text>
+<line x1="704.8" y1="62.0" x2="704.8" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="704.8" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">3.50</text>
+<line x1="828.5" y1="62.0" x2="828.5" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="828.5" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">4.22</text>
+<line x1="952.3" y1="62.0" x2="952.3" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="952.3" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">4.94</text>
+<line x1="1076.0" y1="62.0" x2="1076.0" y2="366.0" stroke="#f5f5f5" stroke-width="1"/>
+<text x="1076.0" y="418.0" text-anchor="middle" font-size="11" fill="#444" font-family="Helvetica, Arial, sans-serif">5.66</text>
+<text x="581.0" y="386.0" text-anchor="middle" font-size="15" fill="#222" font-family="Helvetica, Arial, sans-serif">time since request submit (s)</text>
+</svg>

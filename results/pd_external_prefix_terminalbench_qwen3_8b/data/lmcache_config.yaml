@@ -1,0 +1,7 @@
+chunk_size: 256
+local_cpu: false
+max_local_cpu_size: 10
+remote_url: "mock://256/?peeking_latency=1&read_throughput=40&write_throughput=8"
+remote_serde: "naive"
+save_decode_cache: false
+save_unfull_chunk: false
