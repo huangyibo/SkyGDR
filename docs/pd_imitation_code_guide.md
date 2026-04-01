@@ -65,6 +65,11 @@ Terminal-Bench trajectories
 - `seed` 是每条 session 的首轮长前缀
 - `reuse` 是后续只追加小 suffix 的 turn
 - 每个 `reuse_round_*` 会把多条 session 放到同一个 `dispatch_group`
+- 输出顺序明确是：
+  - 先所有 session 的 `seed`
+  - 再 `reuse_round_001`
+  - 再 `reuse_round_002`
+  - 依次类推
 - token 长度保持 `chunk_size_tokens` 对齐，默认 `256`
 
 输出：
@@ -110,6 +115,7 @@ Terminal-Bench trajectories
 
 - `dispatch_group`
 - `dispatch_group_size`
+- `schedule_index`
 - `group_submit_ts_unix_ms`
 - `group_response_finish_ts_unix_ms`
 - `group_lmcache_remote_read_GiB`
@@ -152,6 +158,7 @@ Terminal-Bench trajectories
 这版特别处理了一个新问题：
 
 - `reuse_round_*` 内请求可能并发重叠
+- `seed` 和 `reuse` 需要严格按阶段顺序执行
 
 所以这份脚本会：
 
@@ -197,6 +204,21 @@ Terminal-Bench trajectories
 6. 并发执行 `reuse_round_*`
 7. 采样 PCIe
 8. 生成图和报告
+
+当前脚本还内置了 3 个实验 profile：
+
+- `prefill_max`
+- `balanced_dual_pressure`
+- `decode_heavy`
+
+默认是：
+
+- `balanced_dual_pressure`
+
+这意味着当前默认主线不是“只把 prefill 打满”，而是：
+
+- 保留大历史前缀和并发 reuse
+- 同时把 decode 拉到足够长，避免把 decode 压得过轻
 
 ## 4. 现在最该改哪些参数
 

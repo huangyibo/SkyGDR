@@ -159,7 +159,12 @@ def build_groups(rows: list[dict]) -> list[tuple[str, list[dict]]]:
     for row in rows:
         group = row.get("dispatch_group") or row["request_id"]
         groups.setdefault(group, []).append(row)
-    return list(groups.items())
+    ordered = []
+    for group, group_rows in groups.items():
+        min_order = min(int(r.get("schedule_index", 1 << 30)) for r in group_rows)
+        ordered.append((min_order, group, group_rows))
+    ordered.sort(key=lambda x: x[0])
+    return [(group, group_rows) for _, group, group_rows in ordered]
 
 
 def run_one_request(req_url: str, model: str, row: dict, timeout_s: float, ignore_eos: bool) -> dict:
@@ -249,6 +254,7 @@ def main() -> int:
                 "source_row_name",
                 "source_num_steps",
                 "source_total_tokens",
+                "schedule_index",
                 "submit_ts_unix_ms",
                 "response_finish_ts_unix_ms",
                 "post_metrics_ts_unix_ms",
@@ -360,6 +366,7 @@ def main() -> int:
                     "source_row_name": row.get("source_row_name", ""),
                     "source_num_steps": row.get("source_num_steps", ""),
                     "source_total_tokens": row.get("source_total_tokens", ""),
+                    "schedule_index": row.get("schedule_index", ""),
                     "submit_ts_unix_ms": result.get("submit_ts_unix_ms", ""),
                     "response_finish_ts_unix_ms": result.get("response_finish_ts_unix_ms", ""),
                     "post_metrics_ts_unix_ms": group_post_metrics_ts,

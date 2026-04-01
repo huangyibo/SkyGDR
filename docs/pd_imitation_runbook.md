@@ -65,8 +65,8 @@
 
 - `dtype=bfloat16`
 - `max-model-len=32768`
-- `gpu-memory-utilization=0.85`
-- `max-num-seqs=4`
+- `gpu-memory-utilization=0.88`
+- `max-num-seqs=8`
 - `--no-enable-prefix-caching`
 - `--kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'`
 
@@ -76,7 +76,7 @@
    - 关闭 vLLM 自己的 GPU prefix cache
    - 避免 GPU 本地命中把 external/shared 命中遮掉
 
-2. `max-num-seqs=4`
+2. `max-num-seqs=8`
    - 允许多个 `reuse` 请求在同一轮并发
    - 让 aggregate prefill load 更容易抬高
 
@@ -100,25 +100,59 @@
 - `MOCK_READ_GBPS=40`
 - `MOCK_WRITE_GBPS=8`
 
-### 3.3 Terminal-Bench workload 默认参数
+### 3.3 实验 profile
+
+当前脚本支持 3 个 profile：
+
+- `prefill_max`
+  - 目标是尽量把 prefill / external read 打高
+  - 默认 `DECODE_TOKENS=1`
+- `balanced_dual_pressure`
+  - 目标是让 **prefill 和 decode 都保持较高压力**
+  - 默认 `DECODE_TOKENS=128`
+- `decode_heavy`
+  - 更偏长 decode
+  - 默认 `DECODE_TOKENS=256`
+
+当前默认 profile 是：
+
+- `EXPERIMENT_PROFILE=balanced_dual_pressure`
+
+也就是说，当前默认主线已经不再是“只冲 prefill”，而是：
+
+- 保持大历史前缀和高复用
+- 同时让每个 `reuse` request 有一段不短的 decode
+
+### 3.4 Terminal-Bench workload 默认参数
 
 默认参数已经改成更偏“把 prefill aggregate load 打高”的配置：
 
-- `NUM_SESSIONS=4`
+- `NUM_SESSIONS=8`
 - `REUSE_TURNS_PER_SESSION=5`
-- `SEED_PROMPT_TOKENS=24576`
+- `SEED_PROMPT_TOKENS=28672`
 - `APPEND_TOKENS=256`
-- `DECODE_TOKENS=16`
-- `MAX_ROWS_TO_SCAN=400`
-- `GROUP_CONCURRENCY=4`
+- `DECODE_TOKENS=128`
+- `MAX_ROWS_TO_SCAN=1000`
+- `GROUP_CONCURRENCY=8`
 - `SLEEP_BETWEEN_GROUPS_MS=0`
+- `POST_REQUEST_SETTLE_MS=200`
 
 这些参数的含义是：
 
-- 先挑 `4` 条足够长的真实 Terminal-Bench 轨迹
+- 先挑 `8` 条足够长的真实 Terminal-Bench 轨迹
 - 每条先做一个 `seed` request
 - 然后进入 `5` 个 `reuse_round_*`
-- 每个 `reuse_round_*` 都会把这 `4` 条 session 同时发出去
+- 每个 `reuse_round_*` 都会把这 `8` 条 session 同时发出去
+
+另外，当前 builder 会强制使用：
+
+- **先全部 `seed`**
+- **再进入并发 `reuse_round_*`**
+
+这样可以避免：
+
+- 一部分 session 还没 seed 完，另一部分 reuse 已经开始
+- 命中率和 aggregate RX 被调度顺序本身冲淡
 
 这比单条 session 串行更接近：
 
@@ -192,29 +226,49 @@ bash scripts/run_pd_external_prefix_imitation.sh
 
 ## 7. 推荐的“尽量把 prefill 打满”参数
 
-如果你目标很明确，就是尽量把 prefill 侧 aggregate RX 拉高，我建议先从这组开始：
+如果你目标是 **prefill 和 decode 都尽量高**，建议先直接跑默认 profile：
 
 ```bash
-export NUM_SESSIONS=4
-export GROUP_CONCURRENCY=4
-export MAX_NUM_SEQS=4
+export EXPERIMENT_PROFILE=balanced_dual_pressure
+export NUM_SESSIONS=8
+export GROUP_CONCURRENCY=8
+export MAX_NUM_SEQS=8
 export SLEEP_BETWEEN_GROUPS_MS=0
-export SEED_PROMPT_TOKENS=24576
+export SEED_PROMPT_TOKENS=28672
 export APPEND_TOKENS=256
-export DECODE_TOKENS=16
+export DECODE_TOKENS=128
+export POST_REQUEST_SETTLE_MS=200
 export GPU_METRICS_INTERVAL_MS=20
 
 bash scripts/run_pd_external_prefix_imitation.sh
 ```
 
-如果这组还不够，再往上推：
+如果你只想看更接近“prefill 满载”的极端版本，再切到：
 
 ```bash
-export NUM_SESSIONS=8
-export GROUP_CONCURRENCY=8
-export MAX_NUM_SEQS=8
+export EXPERIMENT_PROFILE=prefill_max
+bash scripts/run_pd_external_prefix_imitation.sh
+```
+
+如果你想让 decode 更重，再切到：
+
+```bash
+export EXPERIMENT_PROFILE=decode_heavy
+bash scripts/run_pd_external_prefix_imitation.sh
+```
+
+如果 `balanced_dual_pressure` 还不够，再往上推：
+
+```bash
+export EXPERIMENT_PROFILE=balanced_dual_pressure
+export NUM_SESSIONS=12
+export GROUP_CONCURRENCY=12
+export MAX_NUM_SEQS=12
 export SLEEP_BETWEEN_GROUPS_MS=0
 export MAX_ROWS_TO_SCAN=1000
+export SEED_PROMPT_TOKENS=28672
+export DECODE_TOKENS=128
+export POST_REQUEST_SETTLE_MS=200
 
 bash scripts/run_pd_external_prefix_imitation.sh
 ```

@@ -374,10 +374,11 @@ def main() -> int:
             f"only found {len(selected)} Terminal-Bench trajectories that satisfy all prefix targets; "
             f"need {args.num_sessions}. Try increasing --max_rows_to_scan or lowering seed/turn targets."
         )
-    rows = []
+    session_rows = []
     selected_rows = []
     for sess_idx, candidate in enumerate(selected):
         session_id = f"tb_session_{sess_idx:02d}"
+        per_turn_rows = []
         prev_text = ""
         prev_prompt_tokens = 0
         for turn_id, target_prompt_tokens in enumerate(total_targets):
@@ -404,7 +405,7 @@ def main() -> int:
                 else f"reuse_round_{turn_id:03d}"
             )
 
-            rows.append(
+            per_turn_rows.append(
                 {
                     "request_id": f"{session_id}_turn_{turn_id:03d}_{phase}",
                     "phase": phase,
@@ -429,6 +430,7 @@ def main() -> int:
             prev_text = prompt_text
             prev_prompt_tokens = actual_prompt_tokens
 
+        session_rows.append(per_turn_rows)
         selected_rows.append(
             {
                 "session_id": session_id,
@@ -440,6 +442,15 @@ def main() -> int:
                 "source_total_tokens": candidate["total_tokens"],
             }
         )
+
+    rows = []
+    schedule_index = 0
+    for turn_id in range(len(total_targets)):
+        for sess_idx in range(len(session_rows)):
+            row = dict(session_rows[sess_idx][turn_id])
+            row["schedule_index"] = schedule_index
+            schedule_index += 1
+            rows.append(row)
 
     dispatch_group_sizes = {}
     for row in rows:
