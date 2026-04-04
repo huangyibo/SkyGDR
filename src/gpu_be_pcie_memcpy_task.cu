@@ -7,14 +7,12 @@
 //   --dir=h2d   : Host -> Device（CPU 内存写入 GPU）
 //   --dir=d2h   : Device -> Host（GPU 读回 CPU 内存）
 //
-// 编译示例（SM80）：
-//   nvcc gpu_be_pcie_memcpy_task.cu -O3 -std=c++14 -o gpu_pcie_memcpy \
-//     -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80
+// 编译：优先使用 Makefile，让 CUDA/HIP 编译器自动选择。
 //
 // 运行示例：
 //   ./bin/gpu_pcie_memcpy --dir=d2h --chunk_mb=128 --streams=8 --batch=8 --inflight=8 --pinned=1 --report_ms=1000
 
-#include <cuda_runtime.h>
+#include "gpu_rt.h"
 
 #include <chrono>
 #include <csignal>
@@ -26,17 +24,6 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
-
-#define CUDA_CHECK(cmd)                                                                           \
-    do                                                                                            \
-    {                                                                                             \
-        cudaError_t e = (cmd);                                                                    \
-        if (e != cudaSuccess)                                                                     \
-        {                                                                                         \
-            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(e)); \
-            exit(1);                                                                              \
-        }                                                                                         \
-    } while (0)
 
 static volatile sig_atomic_t g_stop = 0;
 static void on_sigint(int)
@@ -195,10 +182,10 @@ int main(int argc, char **argv)
         args.max_outstanding_bytes = (size_t)std::max(default_cap, floor_cap);
     }
 
-    CUDA_CHECK(cudaSetDevice(args.device));
+    GPU_RT_CHECK(gpuSetDevice(args.device));
 
-    cudaDeviceProp prop{};
-    CUDA_CHECK(cudaGetDeviceProperties(&prop, args.device));
+    gpuDeviceProp prop{};
+    GPU_RT_CHECK(gpuGetDeviceProperties(&prop, args.device));
 
     const char *dir_name = (args.dir == DIR_H2D ? "h2d" : "d2h");
     printf("[pcie] device=%d name=%s dir=%s bytes=%zu streams=%d batch=%d inflight=%d pinned=%d report_ms=%d progress_ms=%d total_bytes=%zu max_outstanding_bytes=%zu duty_on_ms=%d duty_off_ms=%d seconds=%.1f\n",
@@ -208,13 +195,13 @@ int main(int argc, char **argv)
 
     std::vector<void *> hbufs(args.streams, nullptr);
     std::vector<void *> dbufs(args.streams, nullptr);
-    std::vector<cudaStream_t> streams(args.streams);
+    std::vector<gpuStream_t> streams(args.streams);
 
     for (int i = 0; i < args.streams; ++i)
     {
-        CUDA_CHECK(cudaStreamCreateWithFlags(&streams[i], cudaStreamNonBlocking));
+        GPU_RT_CHECK(gpuStreamCreateWithFlags(&streams[i], gpuStreamNonBlocking));
         if (args.pinned)
-            CUDA_CHECK(cudaHostAlloc(&hbufs[i], args.bytes, cudaHostAllocDefault));
+            GPU_RT_CHECK(gpuHostAlloc(&hbufs[i], args.bytes, gpuHostAllocDefault));
         else
         {
             hbufs[i] = malloc(args.bytes);
@@ -225,15 +212,15 @@ int main(int argc, char **argv)
             }
         }
         memset(hbufs[i], 0xAB, args.bytes);
-        CUDA_CHECK(cudaMalloc(&dbufs[i], args.bytes));
-        CUDA_CHECK(cudaMemset(dbufs[i], 0, args.bytes));
+        GPU_RT_CHECK(gpuMalloc(&dbufs[i], args.bytes));
+        GPU_RT_CHECK(gpuMemset(dbufs[i], 0, args.bytes));
     }
-    CUDA_CHECK(cudaDeviceSynchronize());
+    GPU_RT_CHECK(gpuDeviceSynchronize());
 
     // 为每个 stream 创建 event ring，用于实现 inflight 窗口限流：
     // - 每个 slot 对应“该 slot 上次提交的批次是否完成”；
     // - 新提交前先检查该 slot 是否完成，避免无限制堆积导致不可控排队。
-    std::vector<std::vector<cudaEvent_t>> done(args.streams);
+    std::vector<std::vector<gpuEvent_t>> done(args.streams);
     std::vector<int> ev_head(args.streams, 0);
     std::vector<std::vector<uint64_t>> pending_bytes(args.streams, std::vector<uint64_t>(args.inflight, 0));
 
@@ -242,12 +229,12 @@ int main(int argc, char **argv)
         done[i].resize(args.inflight);
         for (int k = 0; k < args.inflight; ++k)
         {
-            CUDA_CHECK(cudaEventCreateWithFlags(&done[i][k], cudaEventDisableTiming));
+            GPU_RT_CHECK(gpuEventCreateWithFlags(&done[i][k], gpuEventDisableTiming));
             // 初始先打标为“已完成”，保证第一轮提交不会被无意义阻塞。
-            CUDA_CHECK(cudaEventRecord(done[i][k], streams[i]));
+            GPU_RT_CHECK(gpuEventRecord(done[i][k], streams[i]));
         }
     }
-    CUDA_CHECK(cudaDeviceSynchronize());
+    GPU_RT_CHECK(gpuDeviceSynchronize());
 
     FILE *progress_fp = nullptr;
     if (!args.progress_out.empty())
@@ -269,13 +256,13 @@ int main(int argc, char **argv)
         decide_dir(args, do_h2d, do_d2h);
 
         if (do_h2d)
-            CUDA_CHECK(cudaMemcpyAsync(dbufs[i], hbufs[i], args.bytes, cudaMemcpyHostToDevice, streams[i]));
+            GPU_RT_CHECK(gpuMemcpyAsync(dbufs[i], hbufs[i], args.bytes, gpuMemcpyHostToDevice, streams[i]));
         if (do_d2h)
-            CUDA_CHECK(cudaMemcpyAsync(hbufs[i], dbufs[i], args.bytes, cudaMemcpyDeviceToHost, streams[i]));
-        CUDA_CHECK(cudaEventRecord(done[i][0], streams[i]));
+            GPU_RT_CHECK(gpuMemcpyAsync(hbufs[i], dbufs[i], args.bytes, gpuMemcpyDeviceToHost, streams[i]));
+        GPU_RT_CHECK(gpuEventRecord(done[i][0], streams[i]));
         ev_head[i] = 1 % args.inflight;
     }
-    CUDA_CHECK(cudaDeviceSynchronize());
+    GPU_RT_CHECK(gpuDeviceSynchronize());
 
     auto t_start = std::chrono::steady_clock::now(); // 压测起点
     auto last_progress = t_start;
@@ -306,11 +293,11 @@ int main(int argc, char **argv)
             {
                 if (pending_bytes[i][k] == 0)
                     continue;
-                cudaError_t q = cudaEventQuery(done[i][k]);
-                if (q == cudaErrorNotReady)
+                gpuError_t q = gpuEventQuery(done[i][k]);
+                if (q == gpuErrorNotReady)
                     continue;
-                if (q != cudaSuccess)
-                    CUDA_CHECK(q);
+                if (q != gpuSuccess)
+                    GPU_RT_CHECK(q);
                 settle_slot(i, k);
                 settled_any = true;
             }
@@ -325,7 +312,7 @@ int main(int argc, char **argv)
             {
                 if (pending_bytes[i][k] == 0)
                     continue;
-                CUDA_CHECK(cudaEventSynchronize(done[i][k]));
+                GPU_RT_CHECK(gpuEventSynchronize(done[i][k]));
                 settle_slot(i, k);
                 rr_wait_idx = (i + 1) % args.streams;
                 return true;
@@ -422,7 +409,7 @@ int main(int argc, char **argv)
         if (do_transfer)
         {
             // 非阻塞调度策略：
-            // 1) 先对每个 stream 的当前 slot 做 cudaEventQuery（不阻塞）；
+            // 1) 先对每个 stream 的当前 slot 做 gpuEventQuery（不阻塞）；
             // 2) 只有 slot 完成才提交下一批；
             // 3) 若本轮一个都提交不了，再阻塞等待一个 slot 完成，避免空转占满 CPU。
             bool issued_any = false;
@@ -432,11 +419,11 @@ int main(int argc, char **argv)
                 decide_dir(args, do_h2d, do_d2h);
 
                 int k = ev_head[i];
-                cudaError_t q = cudaEventQuery(done[i][k]);
-                if (q == cudaErrorNotReady)
+                gpuError_t q = gpuEventQuery(done[i][k]);
+                if (q == gpuErrorNotReady)
                     continue;
-                if (q != cudaSuccess)
-                    CUDA_CHECK(q);
+                if (q != gpuSuccess)
+                    GPU_RT_CHECK(q);
                 settle_slot(i, k);
 
                 uint64_t slot_issued = 0;
@@ -464,9 +451,9 @@ int main(int argc, char **argv)
                         break;
 
                     if (do_h2d)
-                        CUDA_CHECK(cudaMemcpyAsync(dbufs[i], hbufs[i], copy_bytes, cudaMemcpyHostToDevice, streams[i]));
+                        GPU_RT_CHECK(gpuMemcpyAsync(dbufs[i], hbufs[i], copy_bytes, gpuMemcpyHostToDevice, streams[i]));
                     if (do_d2h)
-                        CUDA_CHECK(cudaMemcpyAsync(hbufs[i], dbufs[i], copy_bytes, cudaMemcpyDeviceToHost, streams[i]));
+                        GPU_RT_CHECK(gpuMemcpyAsync(hbufs[i], dbufs[i], copy_bytes, gpuMemcpyDeviceToHost, streams[i]));
                     slot_issued += (uint64_t)copy_bytes;
                     issued_total += (uint64_t)copy_bytes;
                 }
@@ -479,7 +466,7 @@ int main(int argc, char **argv)
                 }
 
                 // 在该 slot 上记录“本批次结束”事件，供后续复用此 slot 前判断是否完成。
-                CUDA_CHECK(cudaEventRecord(done[i][k], streams[i]));
+                GPU_RT_CHECK(gpuEventRecord(done[i][k], streams[i]));
                 pending_bytes[i][k] = slot_issued;
                 ev_head[i] = (k + 1) % args.inflight;
                 issued_any = true;
@@ -497,7 +484,7 @@ int main(int argc, char **argv)
     }
 
     // 退出前等待所有在途 memcpy 完成，保证统计与资源释放正确。
-    CUDA_CHECK(cudaDeviceSynchronize());
+    GPU_RT_CHECK(gpuDeviceSynchronize());
     for (int i = 0; i < args.streams; ++i)
     {
         for (int k = 0; k < args.inflight; ++k)
@@ -517,14 +504,14 @@ int main(int argc, char **argv)
     for (int i = 0; i < args.streams; ++i)
     {
         for (int k = 0; k < args.inflight; ++k)
-            cudaEventDestroy(done[i][k]);
+            gpuEventDestroy(done[i][k]);
 
         if (args.pinned)
-            cudaFreeHost(hbufs[i]);
+            gpuFreeHost(hbufs[i]);
         else
             free(hbufs[i]);
-        cudaFree(dbufs[i]);
-        cudaStreamDestroy(streams[i]);
+        gpuFree(dbufs[i]);
+        gpuStreamDestroy(streams[i]);
     }
     return 0;
 }

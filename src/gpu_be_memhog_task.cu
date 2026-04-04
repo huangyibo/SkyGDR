@@ -10,31 +10,20 @@
 // Duration-based: run for --seconds (default 60s). Also supports --iters.
 // Grid control: --blocks, --threads, --streams. Working set: --gb.
 //
-// Build (SM80): nvcc gpu_be_memhog_task.cu -O3 -std=c++14 -o gpu_be_memhog_task -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80
+// Build: use the Makefile so the right CUDA/HIP compiler is selected automatically.
 //
 // Run example (16GB working set for 60s):
 //   ./gpu_be_memhog_task --gb=16 --seconds=60 --op=rw --blocks=2048 --threads=256
 //
 // Stop with Ctrl-C if running longer than expected.
 
-#include <cuda_runtime.h>
+#include "gpu_rt.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
 #include <chrono>
-
-#define CUDA_CHECK(cmd)                                                                           \
-    do                                                                                            \
-    {                                                                                             \
-        cudaError_t e = (cmd);                                                                    \
-        if (e != cudaSuccess)                                                                     \
-        {                                                                                         \
-            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(e)); \
-            exit(1);                                                                              \
-        }                                                                                         \
-    } while (0)
 
 enum OpKind
 {
@@ -204,7 +193,7 @@ int main(int argc, char **argv)
 {
     Args args;
     parse_args(argc, argv, args);
-    CUDA_CHECK(cudaSetDevice(args.device));
+    GPU_RT_CHECK(gpuSetDevice(args.device));
 
     // Working set: 2 arrays for ops that write; 1 array for read-only
     size_t elems = (size_t)(args.gb * (1024.0 * 1024.0 * 1024.0) / sizeof(float));
@@ -212,15 +201,15 @@ int main(int argc, char **argv)
         elems = 1;
 
     float *a = nullptr, *b = nullptr;
-    CUDA_CHECK(cudaMalloc(&a, elems * sizeof(float)));
+    GPU_RT_CHECK(gpuMalloc(&a, elems * sizeof(float)));
     if (args.op != OP_READ)
-        CUDA_CHECK(cudaMalloc(&b, elems * sizeof(float)));
+        GPU_RT_CHECK(gpuMalloc(&b, elems * sizeof(float)));
 
     // Initialize
-    CUDA_CHECK(cudaMemset(a, 0, elems * sizeof(float)));
+    GPU_RT_CHECK(gpuMemset(a, 0, elems * sizeof(float)));
     if (b)
-        CUDA_CHECK(cudaMemset(b, 0, elems * sizeof(float)));
-    CUDA_CHECK(cudaDeviceSynchronize());
+        GPU_RT_CHECK(gpuMemset(b, 0, elems * sizeof(float)));
+    GPU_RT_CHECK(gpuDeviceSynchronize());
 
     // Basic sanity on launch config
     if (args.blocks <= 0)
@@ -242,30 +231,30 @@ int main(int argc, char **argv)
     switch (args.op)
     {
     case OP_RW:
-        k_read_write<<<args.blocks, args.threads>>>(a, b, elems, 1);
+        GPU_RT_LAUNCH_KERNEL(k_read_write, args.blocks, args.threads, 0, 0, a, b, elems, 1);
         break;
     case OP_READ:
-        k_read_only<<<args.blocks, args.threads>>>(a, elems, 1);
+        GPU_RT_LAUNCH_KERNEL(k_read_only, args.blocks, args.threads, 0, 0, a, elems, 1);
         break;
     case OP_WRITE:
-        k_write_only<<<args.blocks, args.threads>>>(b, elems, 1);
+        GPU_RT_LAUNCH_KERNEL(k_write_only, args.blocks, args.threads, 0, 0, b, elems, 1);
         break;
     case OP_COPY:
         if (args.vec == 4 && (elems % 4 == 0))
         {
             size_t n4 = elems / 4;
-            k_copy_vec4<<<args.blocks, args.threads>>>(
+            GPU_RT_LAUNCH_KERNEL(k_copy_vec4, args.blocks, args.threads, 0, 0,
                 reinterpret_cast<const float4 *>(a),
                 reinterpret_cast<float4 *>(b),
                 n4, 1);
         }
         else
         {
-            k_copy<<<args.blocks, args.threads>>>(a, b, elems, 1);
+            GPU_RT_LAUNCH_KERNEL(k_copy, args.blocks, args.threads, 0, 0, a, b, elems, 1);
         }
         break;
     }
-    CUDA_CHECK(cudaDeviceSynchronize());
+    GPU_RT_CHECK(gpuDeviceSynchronize());
 
     // Measured loop: run until seconds elapse (if seconds>0), otherwise run fixed count
     double elapsed_s = 0.0;
@@ -286,52 +275,52 @@ int main(int argc, char **argv)
         break; // read + write
     }
 
-    // Use CUDA events to measure GPU-time per launch (gives you GB/s per pass)
-    cudaEvent_t ev0, ev1;
-    CUDA_CHECK(cudaEventCreate(&ev0));
-    CUDA_CHECK(cudaEventCreate(&ev1));
+    // Use GPU events to measure device time per launch (gives you GB/s per pass)
+    gpuEvent_t ev0, ev1;
+    GPU_RT_CHECK(gpuEventCreate(&ev0));
+    GPU_RT_CHECK(gpuEventCreate(&ev1));
 
     double total_gpu_ms = 0.0;
-    std::vector<cudaStream_t> streams(args.streams);
+    std::vector<gpuStream_t> streams(args.streams);
     for (int i = 0; i < args.streams; ++i)
-        CUDA_CHECK(cudaStreamCreateWithFlags(&streams[i], cudaStreamNonBlocking));
+        GPU_RT_CHECK(gpuStreamCreateWithFlags(&streams[i], gpuStreamNonBlocking));
 
     while (true)
     {
-        CUDA_CHECK(cudaEventRecord(ev0));
+        GPU_RT_CHECK(gpuEventRecord(ev0));
         for (int si = 0; si < args.streams; ++si)
         {
             switch (args.op)
             {
             case OP_RW:
-                k_read_write<<<args.blocks, args.threads, 0, streams[si]>>>(a, b, elems, args.iters);
+                GPU_RT_LAUNCH_KERNEL(k_read_write, args.blocks, args.threads, 0, streams[si], a, b, elems, args.iters);
                 break;
             case OP_READ:
-                k_read_only<<<args.blocks, args.threads, 0, streams[si]>>>(a, elems, args.iters);
+                GPU_RT_LAUNCH_KERNEL(k_read_only, args.blocks, args.threads, 0, streams[si], a, elems, args.iters);
                 break;
             case OP_WRITE:
-                k_write_only<<<args.blocks, args.threads, 0, streams[si]>>>(b, elems, args.iters);
+                GPU_RT_LAUNCH_KERNEL(k_write_only, args.blocks, args.threads, 0, streams[si], b, elems, args.iters);
                 break;
             case OP_COPY:
                 if (args.vec == 4 && (elems % 4 == 0))
                 {
                     size_t n4 = elems / 4;
-                    k_copy_vec4<<<args.blocks, args.threads, 0, streams[si]>>>(
+                    GPU_RT_LAUNCH_KERNEL(k_copy_vec4, args.blocks, args.threads, 0, streams[si],
                         reinterpret_cast<const float4 *>(a),
                         reinterpret_cast<float4 *>(b),
                         n4, args.iters);
                 }
                 else
                 {
-                    k_copy<<<args.blocks, args.threads, 0, streams[si]>>>(a, b, elems, args.iters);
+                    GPU_RT_LAUNCH_KERNEL(k_copy, args.blocks, args.threads, 0, streams[si], a, b, elems, args.iters);
                 }
                 break;
             }
         }
-        CUDA_CHECK(cudaEventRecord(ev1));
-        CUDA_CHECK(cudaEventSynchronize(ev1));
+        GPU_RT_CHECK(gpuEventRecord(ev1));
+        GPU_RT_CHECK(gpuEventSynchronize(ev1));
         float ms = 0.f;
-        CUDA_CHECK(cudaEventElapsedTime(&ms, ev0, ev1));
+        GPU_RT_CHECK(gpuEventElapsedTime(&ms, ev0, ev1));
         total_gpu_ms += ms;
         launches++;
 
@@ -358,8 +347,13 @@ int main(int argc, char **argv)
     printf("[memhog] elapsed wall=%.2f s\n", elapsed_s);
 
     // Keep device alive a moment in case profiler attaches
-    CUDA_CHECK(cudaDeviceSynchronize());
+    GPU_RT_CHECK(gpuDeviceSynchronize());
     for (int i = 0; i < args.streams; ++i)
-        cudaStreamDestroy(streams[i]);
+        gpuStreamDestroy(streams[i]);
+    gpuEventDestroy(ev0);
+    gpuEventDestroy(ev1);
+    if (b)
+        gpuFree(b);
+    gpuFree(a);
     return 0;
 }

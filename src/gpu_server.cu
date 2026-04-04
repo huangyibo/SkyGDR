@@ -1,8 +1,5 @@
 // gpu_server.cu
-// Build (A100/A800):
-//   nvcc gpu_server.cu -O3 -std=c++14 -o gpu_server \
-//        -I/usr/include/infiniband -L/usr/lib/x86_64-linux-gnu -libverbs -lpthread \
-//        -gencode arch=compute_80,code=sm_80 -gencode arch=compute_80,code=compute_80
+// Build: use the Makefile so the right CUDA/HIP compiler is selected automatically.
 //
 // Usage:
 //   ./gpu_server <ib_dev> <mr_size:{bytes|[0-9]+[KMG]}> <tcp_port> <port> <gid_idx> [mtu=1024]
@@ -14,14 +11,14 @@
 //   ./gpu_server mlx5_1 1G 18515 1 3 1024
 
 #include <infiniband/verbs.h>
-#include <cuda_runtime.h>
+#include "gpu_rt.h"
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 #include <cerrno>
 #include <algorithm>
@@ -34,22 +31,21 @@
 #include <thread>
 #include <vector>
 
-#define CUDA_CHECK(cmd)                                                                           \
-    do                                                                                            \
-    {                                                                                             \
-        cudaError_t e = (cmd);                                                                    \
-        if (e != cudaSuccess)                                                                     \
-        {                                                                                         \
-            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(e)); \
-            exit(1);                                                                              \
-        }                                                                                         \
-    } while (0)
-
 static void die(const char *m)
 {
     perror(m);
     exit(1);
 }
+
+struct GpuMrRegistration
+{
+    ibv_mr *mr = nullptr;
+    int dmabuf_fd = -1;
+    bool used_dmabuf = false;
+    int direct_errno = 0;
+    int dmabuf_errno = 0;
+    bool dmabuf_available = false;
+};
 
 static void maybe_flush_gpudirect_writes()
 {
@@ -57,26 +53,52 @@ static void maybe_flush_gpudirect_writes()
     if (!supported)
         return;
 
-#if !defined(CUDART_VERSION) || (CUDART_VERSION < 11030)
-    supported = false;
-    fprintf(stderr, "[server] cudaDeviceFlushGPUDirectRDMAWrites not available (CUDART_VERSION too old); ACK may not imply GPU visibility\n");
-    return;
-#else
-    cudaError_t e = cudaDeviceFlushGPUDirectRDMAWrites(cudaFlushGPUDirectRDMAWritesTargetCurrentDevice,
-                                                       cudaFlushGPUDirectRDMAWritesToOwner);
-    if (e == cudaSuccess)
+    gpuError_t e = gpuFlushRemoteWritesToDevice();
+    if (e == gpuSuccess)
         return;
-    if (e == cudaErrorNotSupported || e == cudaErrorInvalidValue)
+    if (e == gpuErrorNotSupported || e == gpuErrorInvalidValue)
     {
         // Clear the sticky error and disable subsequent flush attempts.
-        cudaGetLastError();
+        gpuGetLastError();
         supported = false;
-        fprintf(stderr, "[server] cudaDeviceFlushGPUDirectRDMAWrites not supported; ACK may not imply GPU visibility\n");
+        fprintf(stderr, "[server] %s remote-write flush not supported; ACK may not imply GPU visibility\n",
+                gpuRuntimeName());
         return;
     }
-    fprintf(stderr, "CUDA flush error: %s\n", cudaGetErrorString(e));
+    fprintf(stderr, "%s flush error: %s\n", gpuRuntimeName(), gpuGetErrorString(e));
     exit(1);
-#endif
+}
+
+static GpuMrRegistration register_gpu_memory_region(ibv_pd *pd, void *d_buf, size_t mr_bytes)
+{
+    const int access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
+    GpuMrRegistration reg{};
+
+    reg.mr = ibv_reg_mr(pd, d_buf, mr_bytes, access);
+    if (reg.mr)
+        return reg;
+
+    reg.direct_errno = errno;
+    reg.dmabuf_available = gpuSupportsDmabufExport();
+    if (!reg.dmabuf_available)
+        return reg;
+
+    uint64_t offset = 0;
+    if (!gpuExportDmabufFd(d_buf, mr_bytes, &reg.dmabuf_fd, &offset))
+        return reg;
+
+    reg.mr = ibv_reg_dmabuf_mr(pd, offset, mr_bytes, (uint64_t)(uintptr_t)d_buf,
+                               reg.dmabuf_fd, access);
+    if (reg.mr)
+    {
+        reg.used_dmabuf = true;
+        return reg;
+    }
+
+    reg.dmabuf_errno = errno;
+    close(reg.dmabuf_fd);
+    reg.dmabuf_fd = -1;
+    return reg;
 }
 
 static void xs(int s, const void *b, size_t l)
@@ -263,17 +285,39 @@ int main(int argc, char **argv)
     if (!cq)
         die("create_cq");
 
-    // CUDA MR
+    // GPU MR
     void *d_buf = nullptr;
-    cudaError_t ce = cudaMalloc(&d_buf, mr_bytes);
-    if (ce != cudaSuccess)
+    gpuError_t ge = gpuMalloc(&d_buf, mr_bytes);
+    if (ge != gpuSuccess)
     {
-        fprintf(stderr, "cudaMalloc %zu bytes failed: %s\n", mr_bytes, cudaGetErrorString(ce));
+        fprintf(stderr, "%s malloc %zu bytes failed: %s\n", gpuRuntimeName(), mr_bytes, gpuGetErrorString(ge));
         return 2;
     }
-    ibv_mr *mr = ibv_reg_mr(pd, d_buf, mr_bytes, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ);
-    if (!mr)
-        die("ibv_reg_mr (GPU) (check nvidia-peermem)");
+    GpuMrRegistration gpu_mr = register_gpu_memory_region(pd, d_buf, mr_bytes);
+    if (!gpu_mr.mr)
+    {
+        fprintf(stderr, "[server] failed to register %s buffer with RDMA verbs (direct errno=%d: %s)\n",
+                gpuRuntimeName(), gpu_mr.direct_errno, gpu_mr.direct_errno ? strerror(gpu_mr.direct_errno) : "n/a");
+        if (gpu_mr.dmabuf_available)
+        {
+            fprintf(stderr, "[server] DMA-BUF fallback also failed");
+            if (gpu_mr.dmabuf_errno)
+                fprintf(stderr, " (errno=%d: %s)", gpu_mr.dmabuf_errno, strerror(gpu_mr.dmabuf_errno));
+            fprintf(stderr, "\n");
+        }
+        else
+        {
+            fprintf(stderr, "[server] DMA-BUF export is not available in the active %s runtime\n", gpuRuntimeName());
+        }
+        if (GPU_RT_IS_CUDA)
+            fprintf(stderr, "[server] hint: check nvidia-peermem or a CUDA driver/runtime with DMA-BUF export support\n");
+        else
+            fprintf(stderr, "[server] hint: check ROCm peer-memory / DMA-BUF support for GPUDirect RDMA on this host\n");
+        return 2;
+    }
+    ibv_mr *mr = gpu_mr.mr;
+    if (gpu_mr.used_dmabuf)
+        fprintf(stderr, "[server] registered GPU MR through DMA-BUF fallback\n");
 
     fprintf(stderr, "[server] MR addr=0x%lx len=%zu rkey=0x%x\n", (unsigned long)(uintptr_t)d_buf, mr_bytes, mr->rkey);
 

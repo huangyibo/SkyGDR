@@ -23,6 +23,56 @@
 - [1p1d example configs](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml)
 - [1p1d example configs](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml)
 
+## 0. 一眼看懂：hybrid 版本里到底有哪些“通道”
+
+如果把你关心的双机 `PD + CPU KV offloading hybrid` 只抽成最核心的数据面，它更像下面这个结构。
+
+```text
+Server A: Prefiller                                         Server B: Decoder
++-------------------------------+                           +-------------------------------+
+| vLLM Prefill GPU              |                           | vLLM Decode GPU               |
+|   - new suffix prefill        |                           |   - decode tokens             |
+|   - may reuse old prefix KV   |                           |   - retrieve prefiller KV     |
++---------------+---------------+                           +---------------+---------------+
+                |                                                           ^
+                | (1) from_gpu()                                            | (4) to_gpu()
+                v                                                           |
+      +---------+----------+                                   +------------+-----------+
+      | LMCache sender     |                                   | LMCache receiver        |
+      | PDBackend          |==== (3) NIXL / RDMA / TCP =======>| PDBackend               |
+      | LocalCPUBackend    |                                   | LocalCPUBackend         |
+      | RemoteBackend      |                                   | RemoteBackend           |
+      +----+----------+----+                                   +------------+------+-----+
+           |          |                                                        |      |
+   (2a)    |          | (2b)                                                   |      | (5)
+ retrieve  |          | retrieve                                               |      +--> store decode KV
+ old prefix|          | old prefix                                             |           to RemoteBackend
+ from CPU  |          | from remote                                            |
+           v          v                                                        |
+        CPU RAM   remote kv store <======================== optional ===========
+```
+
+这里最容易混的点，是这 3 条路径其实不是一回事：
+
+1. `prefiller -> decoder` 的主跨机通道，是 `PDBackend`
+2. `CPU KV offloading / remote tier`，是 `LocalCPUBackend + RemoteBackend`
+3. `pd_buffer_device=cpu` 只是把 **PD transport buffer** 放到 CPU，不等于“decoder 机器可以没有 GPU”
+
+如果对应到 example config：
+
+- prefiller config：[lmcache-prefiller-pd-with-remote-config.yaml](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml)
+  - `local_cpu: True` [#L1](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L1)
+  - `remote_url: "lm://localhost:6800"` [#L4](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L4)
+  - `retrieve_locations: ["LocalCPUBackend", "RemoteBackend"]` [#L7](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L7)
+  - `enable_pd: True` [#L9](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L9)
+  - `pd_role: "sender"` [#L11](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L11)
+
+- decoder config：[lmcache-decoder-pd-with-remote-config.yaml](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml)
+  - `retrieve_locations: ["PDBackend"]` [#L7](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml#L7)
+  - `store_location: "RemoteBackend"` [#L8](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml#L8)
+  - `enable_pd: True` [#L10](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml#L10)
+  - `pd_role: "receiver"` [#L12](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml#L12)
+
 ## 1. 先说结论
 
 如果只看代码，结论可以拆成 4 条：
@@ -45,15 +95,6 @@
 4. **代码层面，`PD + LocalCPU + RemoteBackend` 是可以共存的**
    - 这点和一部分文档口径并不完全一致
    - 仓库里甚至已经有 `pd-with-remote-config.yaml` 示例
-
-但如果再加一句更保守的系统结论：
-
-- **“双机 PD 分离 + 一边只有 CPU、没有 GPU” 并不属于当前 LMCache 明确稳定支持的标准形态。**
-
-原因不是 CPU backend 不存在，而是：
-
-- PD receiver 这边本质上仍然是 decode vLLM 实例
-- 官方 quickstart 和 example 主线默认都要求至少 2 GPUs
 
 ## 2. 这几个词不要混着理解
 
@@ -333,6 +374,175 @@ LMCache 这里有两个很关键的概念：
 
 所以这两个配置才是 hybrid 语义的关键。
 
+## 5.3 `cache_engine -> storage_manager -> backend` 的主调用链
+
+如果只盯最关键的几行，数据路径实际上很直白：
+
+```text
+store path:
+GPU KV
+  -> gpu_connector.batched_from_gpu(...)
+  -> storage_manager.batched_put(..., location=store_location)
+  -> backend.batched_submit_put_task(...)
+
+retrieve path:
+backend.get_blocking(...) / batched_get_blocking(...)
+  -> cache_engine 收到 MemoryObj
+  -> gpu_connector.batched_to_gpu(...)
+  -> 如果是 PD receiver，可 remove_after_retrieve
+```
+
+对应代码：
+
+- `cache_engine` 保存 `store_location` / `retrieve_locations`
+  - [cache_engine.py:181-186](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L181)
+- store 时先从 GPU 导出，再交给 `storage_manager.batched_put(...)`
+  - [cache_engine.py:532-544](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L532)
+- retrieve 时再 `batched_to_gpu(...)`
+  - [cache_engine.py:851-856](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L851)
+- PD receiver retrieve 后会 `remove(...)`
+  - [cache_engine.py:860-863](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L860)
+
+而 `storage_manager` 真正做的事情是：
+
+- `batched_put(...)` 按 backend allocator 复制对象，再把对象交给各 backend
+  - [storage_manager.py:379-425](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L379)
+- `get(...)` / `batched_get(...)` 从 active backend 顺序查找
+  - [storage_manager.py:430-452](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L430)
+  - [storage_manager.py:475-505](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L475)
+- 如果命中来源不是 `LocalCPUBackend` / `PDBackend`，会自动写回 `LocalCPUBackend`
+  - [storage_manager.py:445-451](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L445)
+  - [storage_manager.py:489-505](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L489)
+
+## 5.4 真正的数据流：3 条关键路径
+
+你要的 hybrid 语义，最值得单独拆成 3 张“脑内流程图”。
+
+### 路径 A：prefiller 侧复用旧 prefix
+
+这条路回答的是：
+
+- prefiller 本轮 prefill 之前，如果想复用旧 KV，会先从哪儿拿？
+
+在 prefiller example config 里：
+
+- `retrieve_locations = ["LocalCPUBackend", "RemoteBackend"]`
+  - [lmcache-prefiller-pd-with-remote-config.yaml:7](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L7)
+
+所以它的优先级是：
+
+```text
+Prefiller GPU wants old prefix KV
+    |
+    v
+cache_engine.retrieve(...)
+    |
+    v
+storage_manager.get(location=["LocalCPUBackend", "RemoteBackend"])
+    |
+    +--> LocalCPUBackend.get_blocking(...)
+    |      [local hit]
+    |
+    `--> RemoteBackend.get_blocking(...)
+           [remote hit]
+             |
+             `--> auto write-back to LocalCPUBackend
+```
+
+关键代码：
+
+- `LocalCPUBackend.get_blocking(...)`
+  - [local_cpu_backend.py:202-214](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/local_cpu_backend.py#L202)
+- `RemoteBackend.get_blocking(...)`
+  - [remote_backend.py:317-363](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/remote_backend.py#L317)
+- remote 命中后自动写回本地 CPU
+  - [storage_manager.py:445-451](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L445)
+
+### 路径 B：prefiller 把本轮 prefill KV 送到 decoder
+
+这条路才是 PD 主干。
+
+```text
+Server A / Prefiller
+GPU KV
+  |
+  | 1. cache_engine 从 GPU 导出 chunk
+  v
+PDBackend(sender allocator domain)
+  |
+  | 2. sender 向 receiver 请求远端 buffer 地址
+  v
+receiver alloc socket
+  |
+  | 3. receiver 先 allocate + put(key, mem_obj)
+  v
+PDBackend(receiver local data)
+  ^
+  | 4. sender batched_write(...) 真正传输
+  |
+NIXL / RDMA / TCP transfer channel
+```
+
+关键代码：
+
+- `cache_engine` 从 GPU 导出并进入 `batched_put(...)`
+  - [cache_engine.py:532-544](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L532)
+- `storage_manager.batched_put(...)` 最后调用 backend 的 `batched_submit_put_task(...)`
+  - [storage_manager.py:405-425](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L405)
+- sender 建连、准备 alloc socket
+  - [pd_backend.py:302-340](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L302)
+- sender 请求远端分配
+  - [pd_backend.py:342-380](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L342)
+- sender 真正 `batched_write(...)`
+  - [pd_backend.py:383-462](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L383)
+- receiver 侧 allocation loop
+  - [pd_backend.py:471-555](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L471)
+- receiver 侧把预分配的 `mem_obj` 放进本地 `self.data`
+  - [pd_backend.py:488-529](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L488)
+  - [pd_backend.py:557-563](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L557)
+
+### 路径 C：decoder 从 PDBackend 取 prefiller KV，再把 decode KV 存去 remote
+
+这条路是最像“hybrid”而不是“纯 PD”的地方。
+
+decoder example config 写的是：
+
+- `retrieve_locations = ["PDBackend"]`
+  - [lmcache-decoder-pd-with-remote-config.yaml:7](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml#L7)
+- `store_location = "RemoteBackend"`
+  - [lmcache-decoder-pd-with-remote-config.yaml:8](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml#L8)
+
+它表达的就是：
+
+```text
+decode input KV:
+PDBackend(receiver local data)
+    -> cache_engine.retrieve(...)
+    -> gpu_connector.batched_to_gpu(...)
+    -> Decode GPU starts decoding
+
+decode output KV:
+Decode GPU
+    -> cache_engine.store(...)
+    -> storage_manager.batched_put(location="RemoteBackend")
+    -> RemoteBackend.batched_submit_put_task(...)
+    -> remote kv store
+```
+
+关键代码：
+
+- receiver 只能从 `PDBackend` retrieve，这是 config 校验直接限制的
+  - [config.py:568-579](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/config.py#L568)
+- `PDBackend.get_blocking(...)`
+  - [pd_backend.py:565-571](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L565)
+- retrieve 后 `batched_to_gpu(...)`
+  - [cache_engine.py:851-856](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L851)
+- decoder decode 后如果 `store_location="RemoteBackend"`，就只往 remote 存
+  - [cache_engine.py:183-186](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L183)
+  - [cache_engine.py:539-544](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L539)
+- `RemoteBackend.batched_submit_put_task(...)`
+  - [remote_backend.py:258-315](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/remote_backend.py#L258)
+
 ## 6. `pd-with-remote-config` 这两个例子到底在表达什么
 
 这是你现在最值得关注的部分。
@@ -426,6 +636,253 @@ LMCache 这里有两个很关键的概念：
 在当前主线里：
 
 - `transfer_channel` 通常是 `nixl`
+
+## 8.1 如果把 `pd_buffer_device` 改成 `cpu`，图会怎么变
+
+这一点值得单独说，因为它最容易被误读成“decoder 可以只用 CPU”。
+
+先看配置定义：
+
+- `pd_buffer_device` 可取 `"cpu"` 或 `"cuda"`
+  - [configurations.rst:248-250](/Users/daniel/Documents/code/SkyGDR/LMCache/docs/source/api_reference/configurations.rst#L248)
+- 代码校验也要求 `enable_pd=true` 时必须提供它
+  - [config.py:545-549](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/config.py#L545)
+
+再看 `PDBackend.allocate(...)`，它走的是自己的 allocator domain：
+
+- [pd_backend.py:251-260](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L251)
+
+结合 `cache_engine` 的 `from_gpu(...)` / `to_gpu(...)`，更准确的理解应该是：
+
+```text
+pd_buffer_device = "cuda"
+  sender GPU KV ----> GPU PD buffer ==== RDMA/NIXL ====> receiver GPU/PD buffer ----> decoder GPU
+
+pd_buffer_device = "cpu"
+  sender GPU KV ----> CPU PD buffer ==== RDMA/NIXL ====> receiver CPU PD buffer ----> decoder GPU
+```
+
+这里第二行是基于 allocator 选择和 `from_gpu/to_gpu` 调用链做的代码推断。它说明的是：
+
+- `pd_buffer_device=cpu` 更像是在 PD 通道两端引入 CPU staging/buffer
+- 不是把 decoder 本身变成 CPU-only
+
+所以如果你问：
+
+- “双机 PD 分离 + CPU KV cache offloading hybrid 里，GPU / CPU / RDMA 之间的传输图是什么样？”
+
+那更接近的答案是：
+
+```text
+Prefiller GPU
+  -> (optional) LocalCPU / RemoteBackend retrieve old prefix
+  -> prefill new suffix on GPU
+  -> PD buffer (GPU or CPU, controlled by pd_buffer_device)
+  -> RDMA/NIXL
+  -> PD buffer on decoder side
+  -> Decoder GPU retrieve and decode
+  -> decode KV can be offloaded to LocalCPU / RemoteBackend
+```
+
+也就是说：
+
+- `PDBackend` 负责 **prefiller -> decoder**
+- `LocalCPUBackend / RemoteBackend` 负责 **cache tiering / offloading**
+- `pd_buffer_device` 只决定 **PD 通道内部的 buffer 在 CPU 还是 GPU**
+
+## 8.2 prefiller 这一侧，CPU 和 GPU 之间到底有哪些传输
+
+如果只看 prefiller 这一侧，`CPU <-> GPU` 传输其实主要来自两件事：
+
+1. **复用旧 prefix KV**
+2. **把本轮新产生的 prefill KV 导出到 PD / CPU / remote tier**
+
+先看最短版图。
+
+```text
+Prefiller side
+
+A. 复用旧 prefix
+LocalCPU / RemoteBackend  ----H2D---->  Prefill GPU
+                               ^
+                               |
+                    batched_to_gpu(...)
+
+B. 导出本轮新 prefill KV
+Prefill GPU  ----D2H or GPU->GPU---->  PD buffer / LocalCPU / RemoteBackend
+                  ^
+                  |
+         batched_from_gpu(...)
+```
+
+### 8.2.1 旧 prefix 命中时，是 `CPU -> GPU`
+
+在 prefiller 的 hybrid example 里：
+
+- `retrieve_locations: ["LocalCPUBackend", "RemoteBackend"]`
+  - [lmcache-prefiller-pd-with-remote-config.yaml:7](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml#L7)
+
+所以 prefiller 要复用旧 KV 时，会优先在：
+
+- `LocalCPUBackend`
+- `RemoteBackend`
+
+里查找，然后再放回 GPU。
+
+对应调用链：
+
+- `storage_manager.get(...)` / `batched_get(...)`
+  - [storage_manager.py:430-452](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L430)
+  - [storage_manager.py:475-505](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L475)
+- `cache_engine` 命中后再 `batched_to_gpu(...)`
+  - [cache_engine.py:851-856](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L851)
+
+所以这条路径的本质就是：
+
+```text
+LocalCPUBackend / RemoteBackend -> Prefiller GPU KV cache
+```
+
+也就是 **H2D**。
+
+如果命中的是 `RemoteBackend`，还有一个额外动作：
+
+- 命中的对象会自动写回 `LocalCPUBackend`
+  - [storage_manager.py:445-451](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L445)
+  - [storage_manager.py:489-505](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L489)
+
+但这一步是：
+
+```text
+RemoteBackend -> LocalCPUBackend
+```
+
+属于 **CPU -> CPU**，不是 GPU 传输。
+
+### 8.2.2 新 prefill KV 导出时，会先执行 `from_gpu(...)`
+
+本轮 prefill 结束后，`cache_engine.store(...)` 会先把 GPU 上的 KV 导出：
+
+- [cache_engine.py:532-544](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/cache_engine.py#L532)
+
+这里最关键的一句是：
+
+- `self.gpu_connector.batched_from_gpu(memory_objs, starts, ends, **kwargs)`
+
+`GPUConnectorInterface` 对它的语义定义也很直接：
+
+- `from_gpu(...)`: “Load the data from a GPU buffer into the memory object.”
+  - [gpu_connectors.py:55-69](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/gpu_connector/gpu_connectors.py#L55)
+- `batched_from_gpu(...)`
+  - [gpu_connectors.py:72-90](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/gpu_connector/gpu_connectors.py#L72)
+
+所以，不管后面要往哪儿存，第一步都是：
+
+```text
+Prefill GPU KV -> 某个 MemoryObj
+```
+
+但这个 `MemoryObj` 在 CPU 还是 GPU，要看 allocator backend。
+
+### 8.2.3 在 PD 模式下，prefiller 的 allocator backend 默认是 `PDBackend`
+
+`StorageManager` 在 `enable_pd=True` 时，会把 allocator backend 设成 `PDBackend`：
+
+- [storage_manager.py:312-320](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L312)
+
+也就是说，在 PD 模式下，prefiller 先把 GPU KV 导出到：
+
+- `PDBackend` 自己的 buffer domain
+
+而这个 domain 是 CPU 还是 GPU，又取决于：
+
+- `pd_buffer_device`
+  - [pd_backend.py:170-179](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/pd_backend.py#L170)
+
+于是要分两种情况。
+
+#### 情况 A：`pd_buffer_device="cuda"`
+
+这时更像：
+
+```text
+Prefill GPU --from_gpu--> PD GPU buffer --RDMA WRITE--> Decoder
+```
+
+也就是说：
+
+- 主 PD 路径本身 **不一定经过 prefiller CPU**
+- 更像是本地 **GPU -> GPU buffer**，然后 sender 发起 RDMA/NIXL 写
+
+#### 情况 B：`pd_buffer_device="cpu"`
+
+这时更像：
+
+```text
+Prefill GPU --D2H--> PD CPU buffer --RDMA WRITE--> Decoder
+```
+
+所以在这种配置下，prefiller 侧会明确存在一条：
+
+- **GPU -> CPU**
+
+### 8.2.4 如果 prefiller 还同时往 LocalCPU / RemoteBackend 存，会不会再有 CPU-GPU 传输
+
+会，但要看当前起点对象在哪。
+
+`storage_manager.batched_put(...)` 会根据目标 backend 的 allocator domain 复制对象：
+
+- [storage_manager.py:405-425](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L405)
+
+其中关键逻辑是：
+
+- `allocate_and_copy_objects(...)`
+  - [storage_manager.py:416-418](/Users/daniel/Documents/code/SkyGDR/LMCache/lmcache/v1/storage_backend/storage_manager.py#L416)
+
+所以：
+
+#### 如果 `pd_buffer_device="cuda"`
+
+此时起始对象先在 PD 的 GPU buffer 里。  
+如果还要再往 `LocalCPUBackend` / `RemoteBackend` 存，通常会出现：
+
+```text
+PD GPU buffer -> LocalCPU / RemoteBackend staging
+```
+
+也就是又一条 **GPU -> CPU**。
+
+#### 如果 `pd_buffer_device="cpu"`
+
+此时起始对象已经在 CPU buffer 里。  
+再往 `LocalCPUBackend` / `RemoteBackend` 走时，更像：
+
+```text
+PD CPU buffer -> LocalCPU / RemoteBackend
+```
+
+这时主要是 **CPU -> CPU**，不是额外的 GPU 传输。
+
+### 8.2.5 一句话总结 prefiller 侧的 CPU/GPU 传输
+
+如果你只关心 prefiller 这一侧：
+
+1. **复用旧 prefix 时**
+   - 主要是 **CPU -> GPU**
+   - 即 `LocalCPU/Remote -> Prefiller GPU`
+
+2. **把新 prefill KV 送去 PD 时**
+   - `pd_buffer_device="cpu"`：有明确 **GPU -> CPU**
+   - `pd_buffer_device="cuda"`：主路径不一定经过 CPU
+
+3. **如果同时还要把新 KV 落到 CPU / remote tier**
+   - `pd_buffer_device="cuda"` 时，通常会再出现一条 **GPU -> CPU**
+   - `pd_buffer_device="cpu"` 时，更多是 **CPU -> CPU**
+
+所以真正决定 prefiller 侧 CPU-GPU 传输图长什么样的，是这两个问题：
+
+- 这轮是在 **retrieve old prefix**，还是在 **store new prefix**
+- `pd_buffer_device` 选的是 `"cpu"` 还是 `"cuda"`
 
 ## 9. 代码层面可以支持哪些组合
 
