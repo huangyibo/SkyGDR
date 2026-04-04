@@ -2,6 +2,8 @@
 
 当前和 `PD imitation` 最相关的文档是：
 
+- [pd_dualnode_rdma_runbook.md](/Users/daniel/Documents/code/SkyGDR/docs/pd_dualnode_rdma_runbook.md)
+  - 双机 AMD 上直接走 RDMA 的 `PD + CPU KV offloading` 运行手册
 - [pd_imitation_runbook.md](/Users/daniel/Documents/code/SkyGDR/docs/pd_imitation_runbook.md)
   - Terminal-Bench 驱动的 external prefix-cache imitation 执行手册
 - [pd_imitation_code_guide.md](/Users/daniel/Documents/code/SkyGDR/docs/pd_imitation_code_guide.md)

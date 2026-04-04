@@ -23,6 +23,13 @@
 - [1p1d example configs](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-prefiller-pd-with-remote-config.yaml)
 - [1p1d example configs](/Users/daniel/Documents/code/SkyGDR/LMCache/examples/disagg_prefill/1p1d/configs/lmcache-decoder-pd-with-remote-config.yaml)
 
+另外，仓库里现在补了一套面向当前 AMD 双机实验环境的外层自动化入口：
+
+- [run_pd_dualnode_rdma.sh](/Users/daniel/Documents/code/SkyGDR/scripts/run_pd_dualnode_rdma.sh)
+- [pd_dualnode_rdma.env.example](/Users/daniel/Documents/code/SkyGDR/scripts/pd_dualnode_rdma.env.example)
+- [pd_dualnode_proxy_workload.py](/Users/daniel/Documents/code/SkyGDR/src/tools/pd_dualnode_proxy_workload.py)
+- [pd_dualnode_rdma_runbook.md](/Users/daniel/Documents/code/SkyGDR/docs/pd_dualnode_rdma_runbook.md)
+
 ## 0. 一眼看懂：hybrid 版本里到底有哪些“通道”
 
 如果把你关心的双机 `PD + CPU KV offloading hybrid` 只抽成最核心的数据面，它更像下面这个结构。
