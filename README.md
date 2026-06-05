@@ -13,7 +13,9 @@ compute-communication overlap all depend on GPU fabrics behaving predictably.
 In practice, these fabrics are shared hardware resources with implicit
 arbitration priorities.
 
-![Resource contentions in LLM deployments](assets/skygdr-motivation.png)
+<p align="center">
+  <img src="assets/skygdr-motivation.png" alt="Resource contentions in LLM deployments" width="760">
+</p>
 
 Two contention patterns are especially important:
 
@@ -34,7 +36,9 @@ register communication flows with priorities or performance goals; SkyGDR
 observes runtime signals; a scheduler chooses per-flow control actions that
 shape traffic before it enters the shared fabric.
 
-![SkyGDR system overview](assets/skygdr-architecture.png)
+<p align="center">
+  <img src="assets/skygdr-architecture.png" alt="SkyGDR system overview" width="760">
+</p>
 
 SkyGDR's control loop has three parts:
 
