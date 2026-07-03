@@ -1,0 +1,117 @@
+Trace-shaped KV transfer + transformer decode colocation benchmark
+==================================================================
+
+Configuration
+-------------
+SRC_GPU=0
+DST_GPU=1
+LAYERS=80
+KV_HEADS=8
+HEAD_DIM=128
+ELEM_BYTES=2
+DECODE_CONTEXT=32768
+DECODE_GEN=256
+FFN_DIM=16384
+KV_DISTS=computed cached
+KV_ITERS_COMPUTED=10000
+KV_ITERS_CACHED=2000
+KV_ITERS_INPUT=5000
+
+
+================ decode_transformer_kvcache_stress alone ================
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128
+context=32768 gen=256 max_tokens=33024
+KV cache: 20.16 GiB total K+V, fp32
+Time: 67.982 s
+Generated tokens: 256
+Throughput: 3.77 tokens/s
+Approx KV read traffic:  7709.88 GiB
+Approx KV write traffic: 0.16 GiB
+Approx FFN traffic:      2.50 GiB
+Approx total traffic:    7712.54 GiB
+Approx bandwidth:        113.45 GiB/s
+
+================ kv_nvlink_transfer_trace alone, dist=computed ================
+src_gpu=0 dst_gpu=1 iters=10000 dist=computed
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=758 p90=8736 p99=53323 max=70000 tokens
+sampled tokens: p50=776 p90=9063 p99=52945 max=69914
+sampled bytes: p50=254279680 p90=2969763840 p99=17349017600 max=22909419520
+max transfer allocation: 21.34 GiB
+Trace-shaped KV transfer done:
+  transfers: 10000
+  total:     13083.00 GiB
+  time:      35.596 s
+  bw:        367.54 GiB/s
+
+================ kv_nvlink_transfer_trace alone, dist=cached ================
+src_gpu=0 dst_gpu=1 iters=2000 dist=cached
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=60928 p90=112512 p99=162048 max=200000 tokens
+sampled tokens: p50=62918 p90=113934 p99=166794 max=199811
+sampled bytes: p50=20616970240 p90=37333893120 p99=54655057920 max=65474068480
+max transfer allocation: 60.98 GiB
+Trace-shaped KV transfer done:
+  transfers: 2000
+  total:     37906.19 GiB
+  time:      103.312 s
+  bw:        366.91 GiB/s
+
+================ decode_transformer_kvcache_stress overlap, dist=computed ================
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128
+context=32768 gen=256 max_tokens=33024
+KV cache: 20.16 GiB total K+V, fp32
+Time: 69.260 s
+Generated tokens: 256
+Throughput: 3.70 tokens/s
+Approx KV read traffic:  7709.88 GiB
+Approx KV write traffic: 0.16 GiB
+Approx FFN traffic:      2.50 GiB
+Approx total traffic:    7712.54 GiB
+Approx bandwidth:        111.36 GiB/s
+
+================ kv_nvlink_transfer_trace overlap, dist=computed ================
+src_gpu=0 dst_gpu=1 iters=10000 dist=computed
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=758 p90=8736 p99=53323 max=70000 tokens
+sampled tokens: p50=776 p90=9063 p99=52945 max=69914
+sampled bytes: p50=254279680 p90=2969763840 p99=17349017600 max=22909419520
+max transfer allocation: 21.34 GiB
+Trace-shaped KV transfer done:
+  transfers: 10000
+  total:     13083.00 GiB
+  time:      35.591 s
+  bw:        367.59 GiB/s
+
+================ decode_transformer_kvcache_stress overlap, dist=cached ================
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128
+context=32768 gen=256 max_tokens=33024
+KV cache: 20.16 GiB total K+V, fp32
+Time: 70.472 s
+Generated tokens: 256
+Throughput: 3.63 tokens/s
+Approx KV read traffic:  7709.88 GiB
+Approx KV write traffic: 0.16 GiB
+Approx FFN traffic:      2.50 GiB
+Approx total traffic:    7712.54 GiB
+Approx bandwidth:        109.44 GiB/s
+
+================ kv_nvlink_transfer_trace overlap, dist=cached ================
+src_gpu=0 dst_gpu=1 iters=2000 dist=cached
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=60928 p90=112512 p99=162048 max=200000 tokens
+sampled tokens: p50=62918 p90=113934 p99=166794 max=199811
+sampled bytes: p50=20616970240 p90=37333893120 p99=54655057920 max=65474068480
+max transfer allocation: 60.98 GiB
+Trace-shaped KV transfer done:
+  transfers: 2000
+  total:     37906.19 GiB
+  time:      103.305 s
+  bw:        366.94 GiB/s

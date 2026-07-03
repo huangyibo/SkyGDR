@@ -1,0 +1,4 @@
+gpu=1 name=NVIDIA H200 working_set=32768 MiB iters=1000
+launch blocks=1056 threads=256
+HBM stress done: approx 48000.00 GiB in 13.857 s = 3463.86 GiB/s
+checksum=8777546752.000000

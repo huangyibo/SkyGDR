@@ -1,0 +1,132 @@
+Optimized vLLM-like decode + trace-shaped KV transfer benchmark
+================================================================
+
+Configuration
+-------------
+SRC_GPU=0
+DST_GPU=1
+LAYERS=80
+KV_HEADS=8
+HEAD_DIM=128
+ELEM_BYTES=2
+DECODE_CONTEXT=65536
+DECODE_GEN=128
+DECODE_BATCH=16
+TILE_TOKENS=128
+KV_DISTS=computed cached
+KV_ITERS_COMPUTED=10000
+KV_ITERS_CACHED=1000
+KV_ITERS_INPUT=1000
+REPEATS=1
+
+
+################################################################
+Repeat 1
+################################################################
+
+================ decode_vllm_kvcache_hbm_stress alone, repeat=1 ================
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128 vecs_per_head=32
+context=65536 gen=128 max_tokens=65664
+batch=16 tile_tokens=128 max_num_tiles=513
+KV cache: 40.08 GiB total K+V, fp32/float4 storage
+Time: 19.531 s
+Generated tokens: 128
+Active decode batch: 16
+Throughput: 6.55 tokens/s
+Effective sequence-throughput: 104.86 seq-tokens/s
+Approx KV read traffic:       81999.38 GiB
+Approx KV append write:       0.08 GiB
+Approx partial write traffic: 2.50 GiB
+Approx total traffic:         82001.96 GiB
+Approx bandwidth:             4198.57 GiB/s
+
+================ kv_nvlink_transfer_trace alone, dist=computed, repeat=1 ================
+src_gpu=0 dst_gpu=1 iters=10000 dist=computed
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=758 p90=8736 p99=53323 max=70000 tokens
+sampled tokens: p50=776 p90=9063 p99=52945 max=69914
+sampled bytes: p50=254279680 p90=2969763840 p99=17349017600 max=22909419520
+max transfer allocation: 21.34 GiB
+Trace-shaped KV transfer done:
+  transfers: 10000
+  total:     13083.00 GiB
+  time:      35.595 s
+  bw:        367.55 GiB/s
+
+================ kv_nvlink_transfer_trace alone, dist=cached, repeat=1 ================
+src_gpu=0 dst_gpu=1 iters=1000 dist=cached
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=60928 p90=112512 p99=162048 max=200000 tokens
+sampled tokens: p50=61497 p90=112376 p99=160795 max=196659
+sampled bytes: p50=20151336960 p90=36823367680 p99=52689305600 max=64441221120
+max transfer allocation: 60.02 GiB
+Trace-shaped KV transfer done:
+  transfers: 1000
+  total:     18783.05 GiB
+  time:      51.192 s
+  bw:        366.91 GiB/s
+
+================ decode_vllm overlap, dist=computed, repeat=1 ================
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128 vecs_per_head=32
+context=65536 gen=128 max_tokens=65664
+batch=16 tile_tokens=128 max_num_tiles=513
+KV cache: 40.08 GiB total K+V, fp32/float4 storage
+Time: 21.759 s
+Generated tokens: 128
+Active decode batch: 16
+Throughput: 5.88 tokens/s
+Effective sequence-throughput: 94.12 seq-tokens/s
+Approx KV read traffic:       81999.38 GiB
+Approx KV append write:       0.08 GiB
+Approx partial write traffic: 2.50 GiB
+Approx total traffic:         82001.96 GiB
+Approx bandwidth:             3768.69 GiB/s
+
+================ kv transfer overlap, dist=computed, repeat=1 ================
+src_gpu=0 dst_gpu=1 iters=10000 dist=computed
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=758 p90=8736 p99=53323 max=70000 tokens
+sampled tokens: p50=776 p90=9063 p99=52945 max=69914
+sampled bytes: p50=254279680 p90=2969763840 p99=17349017600 max=22909419520
+max transfer allocation: 21.34 GiB
+Trace-shaped KV transfer done:
+  transfers: 10000
+  total:     13083.00 GiB
+  time:      35.594 s
+  bw:        367.56 GiB/s
+
+================ decode_vllm overlap, dist=cached, repeat=1 ================
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128 vecs_per_head=32
+context=65536 gen=128 max_tokens=65664
+batch=16 tile_tokens=128 max_num_tiles=513
+KV cache: 40.08 GiB total K+V, fp32/float4 storage
+Time: 21.783 s
+Generated tokens: 128
+Active decode batch: 16
+Throughput: 5.88 tokens/s
+Effective sequence-throughput: 94.02 seq-tokens/s
+Approx KV read traffic:       81999.38 GiB
+Approx KV append write:       0.08 GiB
+Approx partial write traffic: 2.50 GiB
+Approx total traffic:         82001.96 GiB
+Approx bandwidth:             3764.50 GiB/s
+
+================ kv transfer overlap, dist=cached, repeat=1 ================
+src_gpu=0 dst_gpu=1 iters=1000 dist=cached
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=80 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=60928 p90=112512 p99=162048 max=200000 tokens
+sampled tokens: p50=61497 p90=112376 p99=160795 max=196659
+sampled bytes: p50=20151336960 p90=36823367680 p99=52689305600 max=64441221120
+max transfer allocation: 60.02 GiB
+Trace-shaped KV transfer done:
+  transfers: 1000
+  total:     18783.05 GiB
+  time:      51.190 s
+  bw:        366.93 GiB/s

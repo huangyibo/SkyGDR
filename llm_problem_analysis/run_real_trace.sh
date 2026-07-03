@@ -1,0 +1,13 @@
+SRC_GPU=0 \
+DST_GPU=1 \
+LAYERS=80 \
+KV_HEADS=8 \
+HEAD_DIM=128 \
+ELEM_BYTES=2 \
+DECODE_CONTEXT=32768 \
+DECODE_GEN=256 \
+FFN_DIM=16384 \
+KV_DISTS="computed cached" \
+KV_ITERS_COMPUTED=10000 \
+KV_ITERS_CACHED=2000 \
+./run_trace_decode_colocation_bench.sh

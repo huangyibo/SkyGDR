@@ -129,7 +129,7 @@ static Options parse_args(int argc, char **argv) {
   return opt;
 }
 
-static size_t kv_index(int layer,
+__host__ __device__ static inline size_t kv_index(int layer,
                        int token,
                        int head,
                        int dim,

@@ -1,0 +1,88 @@
+Benchmark configuration
+=======================
+SRC_GPU=0
+DST_GPU=1
+LAYERS=80
+KV_HEADS=8
+HEAD_DIM=128
+ELEM_BYTES=2
+DECODE_CONTEXT=32768
+DECODE_GEN=256
+FFN_DIM=16384
+KV_DISTS=computed cached
+KV_ITERS_COMPUTED=10000
+KV_ITERS_CACHED=2000
+KV_ITERS_INPUT=5000
+
+CUDA / GPU information
+======================
+/scratch/public/nvidia/cuda/cuda-13.2/bin/nvcc
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+Fri May 15 11:39:54 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H200                    On  |   00000000:19:00.0 Off |                    0 |
+| N/A   39C    P0             78W /  700W |       0MiB / 143771MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA H200                    On  |   00000000:3B:00.0 Off |                    0 |
+| N/A   40C    P0             79W /  700W |       0MiB / 143771MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+Topology
+========
+	[4mGPU0	GPU1	NIC0	NIC1	NIC2	NIC3	NIC4	NIC5	NIC6	NIC7	NIC8	NIC9	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	NV18	PIX	PIX	PIX	NODE	NODE	NODE	SYS	SYS	SYS	SYS	0-31,64-95	0		N/A
+GPU1	NV18	 X 	NODE	NODE	NODE	PIX	NODE	NODE	SYS	SYS	SYS	SYS	0-31,64-95	0		N/A
+NIC0	PIX	NODE	 X 	PIX	PIX	NODE	NODE	NODE	SYS	SYS	SYS	SYS				
+NIC1	PIX	NODE	PIX	 X 	PIX	NODE	NODE	NODE	SYS	SYS	SYS	SYS				
+NIC2	PIX	NODE	PIX	PIX	 X 	NODE	NODE	NODE	SYS	SYS	SYS	SYS				
+NIC3	NODE	PIX	NODE	NODE	NODE	 X 	NODE	NODE	SYS	SYS	SYS	SYS				
+NIC4	NODE	NODE	NODE	NODE	NODE	NODE	 X 	NODE	SYS	SYS	SYS	SYS				
+NIC5	NODE	NODE	NODE	NODE	NODE	NODE	NODE	 X 	SYS	SYS	SYS	SYS				
+NIC6	SYS	SYS	SYS	SYS	SYS	SYS	SYS	SYS	 X 	NODE	NODE	NODE				
+NIC7	SYS	SYS	SYS	SYS	SYS	SYS	SYS	SYS	NODE	 X 	NODE	NODE				
+NIC8	SYS	SYS	SYS	SYS	SYS	SYS	SYS	SYS	NODE	NODE	 X 	NODE				
+NIC9	SYS	SYS	SYS	SYS	SYS	SYS	SYS	SYS	NODE	NODE	NODE	 X 				
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+
+NIC Legend:
+
+  NIC0: mlx5_0
+  NIC1: mlx5_1
+  NIC2: mlx5_2
+  NIC3: mlx5_3
+  NIC4: mlx5_4
+  NIC5: mlx5_5
+  NIC6: mlx5_6
+  NIC7: mlx5_7
+  NIC8: mlx5_8
+  NIC9: mlx5_9
+

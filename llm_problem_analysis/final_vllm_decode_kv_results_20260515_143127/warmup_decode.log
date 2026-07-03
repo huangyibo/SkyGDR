@@ -1,0 +1,20 @@
+GPU: 1 NVIDIA H200
+layers=8 kv_heads=8 head_dim=128 vecs_per_head=32
+context=1024 gen=8 max_tokens=1032
+batch=4 tile_tokens=128 max_num_tiles=9
+KV cache: 0.06 GiB total K+V, fp32/float4 storage
+partials: 0.01 MiB
+Initialization done.
+generated 8 / 8 tokens, seq_len=1032, num_tiles=9
+
+Done.
+Time: 0.000 s
+Generated tokens: 8
+Active decode batch: 4
+Throughput: 18680.37 tokens/s
+Effective sequence-throughput: 74721.49 seq-tokens/s
+Approx KV read traffic:       2.01 GiB
+Approx KV append write:       0.00 GiB
+Approx partial write traffic: 0.00 GiB
+Approx total traffic:         2.01 GiB
+Approx bandwidth:             4687.35 GiB/s

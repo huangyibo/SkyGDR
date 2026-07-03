@@ -31,7 +31,8 @@ TARGETS := \
 	kv_nvlink_transfer \
 	decode_hbm_stress \
 	kv_nvlink_transfer_trace \
-	decode_transformer_kvcache_stress
+	decode_transformer_kvcache_stress \
+	decode_vllm_kvcache_hbm_stress
 
 .PHONY: all clean help
 
@@ -47,6 +48,9 @@ kv_nvlink_transfer_trace: kv_nvlink_transfer_trace.cu
 	$(NVCC) $(NVCCFLAGS) $< -o $@
 
 decode_transformer_kvcache_stress: decode_transformer_kvcache_stress.cu
+	$(NVCC) $(NVCCFLAGS) $< -o $@
+
+decode_vllm_kvcache_hbm_stress: decode_vllm_kvcache_hbm_stress.cu
 	$(NVCC) $(NVCCFLAGS) $< -o $@
 
 clean:

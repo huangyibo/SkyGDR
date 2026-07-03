@@ -1,0 +1,29 @@
+Compact decode summary
+======================
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_alone_r1.log:Time: 19.531 s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_alone_r1.log:Throughput: 6.55 tokens/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_alone_r1.log:Effective sequence-throughput: 104.86 seq-tokens/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_alone_r1.log:Approx bandwidth:             4198.57 GiB/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_cached_r1.log:Time: 21.783 s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_cached_r1.log:Throughput: 5.88 tokens/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_cached_r1.log:Effective sequence-throughput: 94.02 seq-tokens/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_cached_r1.log:Approx bandwidth:             3764.50 GiB/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_computed_r1.log:Time: 21.759 s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_computed_r1.log:Throughput: 5.88 tokens/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_computed_r1.log:Effective sequence-throughput: 94.12 seq-tokens/s
+final_vllm_decode_kv_results_20260515_143127/decode_vllm_overlap_computed_r1.log:Approx bandwidth:             3768.69 GiB/s
+
+Compact KV transfer summary
+===========================
+final_vllm_decode_kv_results_20260515_143127/kv_cached_alone_r1.log:  total:     18783.05 GiB
+final_vllm_decode_kv_results_20260515_143127/kv_cached_alone_r1.log:  time:      51.192 s
+final_vllm_decode_kv_results_20260515_143127/kv_cached_alone_r1.log:  bw:        366.91 GiB/s
+final_vllm_decode_kv_results_20260515_143127/kv_cached_overlap_r1.log:  total:     18783.05 GiB
+final_vllm_decode_kv_results_20260515_143127/kv_cached_overlap_r1.log:  time:      51.190 s
+final_vllm_decode_kv_results_20260515_143127/kv_cached_overlap_r1.log:  bw:        366.93 GiB/s
+final_vllm_decode_kv_results_20260515_143127/kv_computed_alone_r1.log:  total:     13083.00 GiB
+final_vllm_decode_kv_results_20260515_143127/kv_computed_alone_r1.log:  time:      35.595 s
+final_vllm_decode_kv_results_20260515_143127/kv_computed_alone_r1.log:  bw:        367.55 GiB/s
+final_vllm_decode_kv_results_20260515_143127/kv_computed_overlap_r1.log:  total:     13083.00 GiB
+final_vllm_decode_kv_results_20260515_143127/kv_computed_overlap_r1.log:  time:      35.594 s
+final_vllm_decode_kv_results_20260515_143127/kv_computed_overlap_r1.log:  bw:        367.56 GiB/s

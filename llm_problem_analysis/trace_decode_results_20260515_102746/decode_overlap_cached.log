@@ -1,0 +1,32 @@
+GPU: 1 NVIDIA H200
+layers=32 kv_heads=8 head_dim=128
+context=16384 gen=512 max_tokens=16896
+KV cache: 4.12 GiB total K+V, fp32
+FFN working set: 1.00 MiB per array
+attention blocks=256 threads=256 shared=1024 bytes
+generated 32 / 512 tokens, current seq_len=16416
+generated 64 / 512 tokens, current seq_len=16448
+generated 96 / 512 tokens, current seq_len=16480
+generated 128 / 512 tokens, current seq_len=16512
+generated 160 / 512 tokens, current seq_len=16544
+generated 192 / 512 tokens, current seq_len=16576
+generated 224 / 512 tokens, current seq_len=16608
+generated 256 / 512 tokens, current seq_len=16640
+generated 288 / 512 tokens, current seq_len=16672
+generated 320 / 512 tokens, current seq_len=16704
+generated 352 / 512 tokens, current seq_len=16736
+generated 384 / 512 tokens, current seq_len=16768
+generated 416 / 512 tokens, current seq_len=16800
+generated 448 / 512 tokens, current seq_len=16832
+generated 480 / 512 tokens, current seq_len=16864
+generated 512 / 512 tokens, current seq_len=16896
+
+Done.
+Time: 65.978 s
+Generated tokens: 512
+Throughput: 7.76 tokens/s
+Approx KV read traffic:  3119.91 GiB
+Approx KV write traffic: 0.12 GiB
+Approx FFN traffic:      1.00 GiB
+Approx total traffic:    3121.03 GiB
+Approx bandwidth:        47.30 GiB/s

@@ -1,0 +1,7 @@
+SRC_GPU=0 \
+DST_GPU=1 \
+HBM_WORKING_SET_MIB=32768 \
+HBM_ITERS=1000 \
+KV_TRANSFER_MIB=16384 \
+KV_ITERS=3000 \
+./run_hbm_kv_overlap_bench.sh

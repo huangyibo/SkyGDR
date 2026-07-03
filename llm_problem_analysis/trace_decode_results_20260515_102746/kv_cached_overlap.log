@@ -1,0 +1,12 @@
+src_gpu=0 dst_gpu=1 iters=5000 dist=cached
+peer_access src->dst=1 dst->src=1
+KV geometry: layers=32 kv_heads=8 head_dim=128 elem_bytes=2
+Trace quantiles: p50=60928 p90=112512 p99=162048 max=200000 tokens
+sampled tokens: p50=61277 p90=112585 p99=160757 max=199811
+sampled bytes: p50=8031698944 p90=14756741120 p99=21070741504 max=26189627392
+max transfer allocation: 24.39 GiB
+Trace-shaped KV transfer done:
+  transfers: 5000
+  total:     37024.81 GiB
+  time:      100.661 s
+  bw:        367.82 GiB/s

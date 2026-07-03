@@ -1,0 +1,27 @@
+GPU: 1 NVIDIA H200
+layers=80 kv_heads=8 head_dim=128 vecs_per_head=32
+context=65536 gen=128 max_tokens=65664
+batch=16 tile_tokens=128 max_num_tiles=513
+KV cache: 40.08 GiB total K+V, fp32/float4 storage
+partials: 20.04 MiB
+Initialization done.
+generated 16 / 128 tokens, seq_len=65552, num_tiles=513
+generated 32 / 128 tokens, seq_len=65568, num_tiles=513
+generated 48 / 128 tokens, seq_len=65584, num_tiles=513
+generated 64 / 128 tokens, seq_len=65600, num_tiles=513
+generated 80 / 128 tokens, seq_len=65616, num_tiles=513
+generated 96 / 128 tokens, seq_len=65632, num_tiles=513
+generated 112 / 128 tokens, seq_len=65648, num_tiles=513
+generated 128 / 128 tokens, seq_len=65664, num_tiles=513
+
+Done.
+Time: 19.531 s
+Generated tokens: 128
+Active decode batch: 16
+Throughput: 6.55 tokens/s
+Effective sequence-throughput: 104.86 seq-tokens/s
+Approx KV read traffic:       81999.38 GiB
+Approx KV append write:       0.08 GiB
+Approx partial write traffic: 2.50 GiB
+Approx total traffic:         82001.96 GiB
+Approx bandwidth:             4198.57 GiB/s
